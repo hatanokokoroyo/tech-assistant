@@ -1,0 +1,132 @@
+"""Tool Calls 执行器 — 在沙箱 /data/tech-assistant/<user_id>/ 内运行。
+
+所有路径操作都经过 path_utils.safe_resolve 校验，防止 AI 逃逸。
+"""
+
+import subprocess
+import os
+from pathlib import Path
+from app.utils.path_utils import safe_resolve, sandbox_root
+
+
+def _resolve(user_id: int, file_path: str) -> Path:
+    """将 AI 传入的路径解析为沙箱内安全路径。"""
+    return safe_resolve(user_id, file_path.lstrip("/"))
+
+
+def run_command(user_id: int, command: str, work_dir: str | None = None, timeout_seconds: int | None = 30) -> str:
+    # 命令白名单检查（禁止危险操作）
+    dangerous = ["rm -rf /", "sudo", "su ", "mkfs", "dd if=", ":(){ :|:& };:", "/dev/"]
+    cmd_lower = command.lower()
+    for d in dangerous:
+        if d in cmd_lower:
+            return f"Error: 危险命令被拦截：{d}"
+
+    cwd = str(sandbox_root(user_id))
+    if work_dir:
+        cwd = str(_resolve(user_id, work_dir))
+
+    timeout = min(timeout_seconds or 30, 120)
+    try:
+        result = subprocess.run(
+            command, shell=True, capture_output=True, text=True,
+            cwd=cwd, timeout=timeout,
+        )
+        output = result.stdout
+        if result.stderr:
+            output += "\n[stderr]\n" + result.stderr
+        if result.returncode != 0:
+            output += f"\n[exit={result.returncode}]"
+        return output or "(no output)"
+    except subprocess.TimeoutExpired:
+        return f"Error: 命令超时（{timeout}秒）"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def read_file(user_id: int, file_path: str, head: int | None = None, tail: int | None = None) -> str:
+    target = _resolve(user_id, file_path)
+    if not target.exists():
+        return f"Error: 文件不存在：{file_path}"
+    if not target.is_file():
+        return f"Error: 不是文件：{file_path}"
+
+    lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+    if head:
+        lines = lines[:head]
+    elif tail:
+        lines = lines[-tail:]
+
+    if len(lines) > 500:
+        lines = lines[:500]
+        lines.append("... (truncated, showing first 500 lines)")
+
+    return "\n".join(lines)
+
+
+def write_file(user_id: int, file_path: str, content: str) -> str:
+    target = _resolve(user_id, file_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return f"OK: 已写入 {file_path} ({len(content)} 字节)"
+
+
+def search_content(
+    user_id: int, pattern: str, path: str | None = None,
+    glob: str | None = None, case_sensitive: bool = False,
+    context: int = 2,
+) -> str:
+    base = sandbox_root(user_id)
+    if path:
+        base = _resolve(user_id, path)
+
+    flags = "" if case_sensitive else "-i"
+    grep_cmd = ["grep", "-rn", flags]
+    if context:
+        grep_cmd.extend([f"-C{context}"])
+    if glob:
+        grep_cmd.extend(["--include", glob])
+    grep_cmd.extend([pattern, str(base)])
+
+    try:
+        result = subprocess.run(grep_cmd, capture_output=True, text=True, timeout=30)
+        output = result.stdout
+        if not output:
+            return "(no matches)"
+        lines = output.strip().split("\n")
+        if len(lines) > 100:
+            lines = lines[:100]
+            lines.append("... (truncated, showing first 100 matches)")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def list_directory(user_id: int, path: str) -> str:
+    target = _resolve(user_id, path)
+    if not target.exists():
+        return f"Error: 目录不存在：{path}"
+    if not target.is_dir():
+        return f"Error: 不是目录：{path}"
+
+    lines = []
+    try:
+        for entry in sorted(target.iterdir(), key=lambda x: (x.is_file(), x.name)):
+            tag = "/" if entry.is_dir() else ""
+            lines.append(f"{entry.name}{tag}")
+    except PermissionError:
+        return "Error: 无权限访问"
+
+    if not lines:
+        return "(empty)"
+    return "\n".join(lines)
+
+
+def delete_file(user_id: int, file_path: str) -> str:
+    target = _resolve(user_id, file_path)
+    if not target.exists():
+        return f"Error: 文件不存在：{file_path}"
+    if target.is_dir():
+        return f"Error: 是目录，不可删除：{file_path}"
+    target.unlink()
+    return f"OK: 已删除 {file_path}"
