@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   frontend:
     build:
@@ -48,11 +46,6 @@ volumes:
       device: ${HOST_DATA_DIR:-./data/tech-assistant}
       o: bind
   pg_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${HOST_PG_DIR:-./data/postgres}
-      o: bind
 
 networks:
   app-net:
