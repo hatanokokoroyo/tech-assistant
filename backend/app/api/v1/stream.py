@@ -114,6 +114,17 @@ async def stream_chat(
                 "".join(assistant_content_parts) or None,
                 assistant_tool_calls,
             )
+            # 补充缺失的 tool 响应（保证消息链完整性）
+            saved_tool_ids = {tr["tool_call_id"] for tr in tool_results}
+            for tc in assistant_tool_calls:
+                tc_id = tc.get("id", "")
+                if tc_id and tc_id not in saved_tool_ids:
+                    logger.warning("tool_call %s 缺少响应，补充错误结果", tc_id)
+                    tool_results.append({
+                        "tool_call_id": tc_id,
+                        "name": tc["function"]["name"],
+                        "content": f"Error: 工具 {tc['function']['name']} 执行未完成",
+                    })
             # 持久化 tool 消息
             for tr in tool_results:
                 await svc.save_tool_message(

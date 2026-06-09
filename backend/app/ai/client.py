@@ -7,10 +7,13 @@ Usage:
 """
 
 import json
+import logging
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.ai.schemas import TOOLS
 from app.ai import tools as ai_tools
+
+logger = logging.getLogger(__name__)
 
 
 class AiClient:
@@ -144,14 +147,42 @@ class AiClient:
         messages = [{"role": "system", "content": system_prompt}]
 
         # 包含历史消息（最近 20 轮）
-        for msg in history[-40:]:
-            entry = {"role": msg["role"], "content": msg["content"]}
+        history_msgs = history[-40:]
+
+        # 收集所有存在的 tool_call_id
+        existing_tool_ids = {
+            msg.get("tool_call_id", "")
+            for msg in history_msgs
+            if msg["role"] == "tool" and msg.get("tool_call_id")
+        }
+
+        for msg in history_msgs:
+            # assistant 消息：检查 tool_calls 完整性
             if msg["role"] == "assistant" and msg.get("tool_calls"):
-                entry["tool_calls"] = msg["tool_calls"]
+                tc_ids = [tc.get("id", "") for tc in msg["tool_calls"] if tc.get("id")]
+                missing = [tc_id for tc_id in tc_ids if tc_id not in existing_tool_ids]
+                if missing:
+                    logger.warning(
+                        "历史消息中 assistant 的 tool_calls 缺少对应 tool 响应，"
+                        "截断不完整消息链。缺失: %s", missing
+                    )
+                    break  # 从此 assistant 消息开始截断
+                entry = {"role": "assistant", "tool_calls": msg["tool_calls"]}
                 entry["content"] = msg.get("content") or None
-            if msg["role"] == "tool":
-                entry["tool_call_id"] = msg.get("tool_call_id", "")
-            messages.append(entry)
+                messages.append(entry)
+
+            elif msg["role"] == "tool":
+                messages.append({
+                    "role": "tool",
+                    "content": msg.get("content") or "",
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                })
+
+            else:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg.get("content") or "",
+                })
 
         messages.append({"role": "user", "content": user_message})
         return messages
