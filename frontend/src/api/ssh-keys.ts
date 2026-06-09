@@ -1,31 +1,21 @@
-import request from './request'
+import { apiClient } from "@/lib/api-client";
 
-export interface SshKeyInfo {
-    id: number
-    fingerprint: string | null
-    created_at: string
+export interface SshKey {
+  id: number;
+  user_id: number;
+  name: string;
+  fingerprint: string;
+  created_at: string;
 }
 
-interface DataResponse<T> {
-    code: number
-    message: string
-    data: T
-}
-
-export function getSshKey() {
-    return request.get<any, DataResponse<SshKeyInfo | null>>('/ssh-keys')
-}
-
-export function uploadSshKeyFile(file: File) {
-    const form = new FormData()
-    form.append('file', file)
-    return request.post<any, DataResponse<SshKeyInfo>>('/ssh-keys', form)
-}
-
-export function uploadSshKeyText(privateKeyContent: string) {
-    return request.post<any, DataResponse<SshKeyInfo>>('/ssh-keys', { private_key_content: privateKeyContent })
-}
-
-export function deleteSshKey(id: number) {
-    return request.delete<any, { code: number }>(`/ssh-keys/${id}`)
-}
+export const sshKeyApi = {
+  list: () => apiClient.get<SshKey[]>("/api/ssh-keys"),
+  uploadText: (data: { name: string; public_key: string }) =>
+    apiClient.post<SshKey>("/api/ssh-keys", data),
+  uploadFile: (formData: FormData) =>
+    fetch("/api/ssh-keys", {
+      method: "POST",
+      body: formData,
+    }),
+  delete: (id: number) => apiClient.delete<void>(`/api/ssh-keys/${id}`),
+};

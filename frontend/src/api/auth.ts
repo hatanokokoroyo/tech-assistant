@@ -1,36 +1,32 @@
-import request from './request'
+import { apiClient } from "@/lib/api-client";
+
+interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+interface RegisterRequest {
+  username: string;
+  password: string;
+  alias_name?: string;
+}
+
+interface LoginResponse {
+  access_token: string;
+  token_type: string;
+}
 
 export interface UserInfo {
-    id: number
-    username: string
-    alias_name: string | null
-    role: string
-    created_at: string
+  id: number;
+  username: string;
+  alias_name: string | null;
+  created_at: string;
 }
 
-export interface LoginResponse {
-    token: string
-    user: UserInfo
-}
-
-interface ApiResponse<T> {
-    code: number
-    message: string
-    data: T
-}
-
-export function register(data: { username: string; password: string; alias_name?: string }) {
-    return request.post<any, ApiResponse<UserInfo>>('/auth/register', data)
-}
-
-export function login(data: { username: string; password: string }) {
-    return request.post<any, ApiResponse<LoginResponse>>('/auth/login', data)
-}
-
-export function getMe() {
-    return request.get<any, ApiResponse<UserInfo>>('/auth/me')
-}
-
-export function updateMe(data: { alias_name: string }) {
-    return request.put<any, ApiResponse<UserInfo>>('/auth/me', data)
-}
+export const authApi = {
+  login: (data: LoginRequest) =>
+    apiClient.post<LoginResponse>("/api/auth/login", data),
+  register: (data: RegisterRequest) =>
+    apiClient.post<unknown>("/api/auth/register", data),
+  getMe: () => apiClient.get<UserInfo>("/api/auth/me"),
+};
