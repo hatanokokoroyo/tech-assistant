@@ -17,14 +17,20 @@ def safe_resolve(user_id: int, relative_path: str) -> Path:
     return target
 
 
-def allowed_document_path(user_id: int, relative_path: str) -> Path:
+def allowed_document_path(user_id: int, project_id: int, relative_path: str) -> Path:
     """仅允许操作 docs 区域的路径：
     - instructions.md
     - doc/**/*.md
     """
-    target = safe_resolve(user_id, relative_path)
+    # 构建沙箱内完整路径: /data/tech-assistant/{user_id}/{project_id}/{relative_path}
+    target = safe_resolve(user_id, f"{project_id}/{relative_path}")
     sandbox = sandbox_root(user_id).resolve()
-    rel = target.relative_to(sandbox)
+    # 校验时使用项目内的相对路径（不含 project_id 前缀）
+    proj_dir = (sandbox / str(project_id)).resolve()
+    try:
+        rel = target.relative_to(proj_dir)
+    except ValueError:
+        raise PermissionError(f"不允许操作的路径: {relative_path}")
 
     parts = rel.parts
     if len(parts) == 1 and parts[0] == "instructions.md":

@@ -53,7 +53,7 @@ def _build_doc_tree(dir_path: Path, rel: str) -> list[dict]:
 
 
 def read_file(user_id: int, project_id: int, file_path: str) -> dict:
-    target = allowed_document_path(user_id, f"{project_id}/{file_path}")
+    target = allowed_document_path(user_id, project_id, file_path)
     if not target.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
     content = target.read_text(encoding="utf-8")
@@ -63,6 +63,6 @@ def read_file(user_id: int, project_id: int, file_path: str) -> dict:
 
 
 def write_file(user_id: int, project_id: int, file_path: str, content: str):
-    target = allowed_document_path(user_id, f"{project_id}/{file_path}")
+    target = allowed_document_path(user_id, project_id, file_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
