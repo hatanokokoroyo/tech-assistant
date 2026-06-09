@@ -111,7 +111,9 @@ async def delete_ssh_key(
 
 
 def _normalize_private_key(content: str) -> str:
-    """规范化私钥格式：确保 BEGIN/END 标记独占一行，与 base64 数据之间有换行。"""
+    """规范化私钥格式：确保 BEGIN/END 标记独占一行，统一换行符为 LF。"""
+    # 统一换行符：\r\n → \n
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
     # 在 BEGIN 标记后插入换行（如果紧跟 base64 数据）
     content = re.sub(
         r"(-----BEGIN [A-Z ]+-----)(\S)",
