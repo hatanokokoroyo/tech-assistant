@@ -50,6 +50,7 @@ async def upload_ssh_key(
 
         # 规范化私钥格式：确保 BEGIN/END 标记独占一行
         content = _normalize_private_key(content)
+        print(f"[ssh-upload] content_len={len(content)} first50={repr(content[:50])}")
 
         # 保存到沙箱
         ssh_dir = sandbox_root(user.id) / ".ssh"
@@ -129,6 +130,21 @@ def _normalize_private_key(content: str) -> str:
     return content
 
 
+def _run_ssh_keygen_fingerprint(path: str) -> str:
+    """运行 ssh-keygen -lf 获取指纹，成功返回指纹字符串，失败返回空。"""
+    try:
+        result = subprocess.run(
+            ["ssh-keygen", "-lf", path],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        print(f"[ssh-keygen -lf] returncode={result.returncode} stderr={result.stderr.strip()}")
+    except Exception as e:
+        print(f"[ssh-keygen -lf] exception: {e}")
+    return ""
+
+
 def _get_fingerprint(key_path: str) -> str:
     """获取 SSH 密钥指纹。先尝试直接读取（公钥），失败则从私钥导出公钥后再读。"""
     # 尝试直接读取（适用于公钥文件）
@@ -146,8 +162,10 @@ def _get_fingerprint(key_path: str) -> str:
         if result.returncode == 0:
             Path(pub_path).write_text(result.stdout, encoding="utf-8")
             fingerprint = _run_ssh_keygen_fingerprint(pub_path)
-    except Exception:
-        pass
+        else:
+            print(f"[ssh-keygen -y] returncode={result.returncode} stderr={result.stderr.strip()}")
+    except Exception as e:
+        print(f"[ssh-keygen -y] exception: {e}")
     finally:
         # 清理临时公钥文件
         try:
@@ -156,20 +174,6 @@ def _get_fingerprint(key_path: str) -> str:
             pass
 
     return fingerprint or ""
-
-
-def _run_ssh_keygen_fingerprint(path: str) -> str:
-    """运行 ssh-keygen -lf 获取指纹，成功返回指纹字符串，失败返回空。"""
-    try:
-        result = subprocess.run(
-            ["ssh-keygen", "-lf", path],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception:
-        pass
-    return ""
 
 
 def _func_now():
