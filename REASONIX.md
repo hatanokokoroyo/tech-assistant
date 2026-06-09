@@ -38,16 +38,17 @@ docker compose down -v                 # 停止并清除数据卷
 ```
 
 ## 约定
-- **API 响应格式：** 统一包裹 `{code: 0, message: "ok", data: ...}`，`code: 0` 表示成功
+- **API 响应格式：** 统一包裹 `{code: 0, message: "ok", data: ...}`，`code: 0` 表示成功；list 接口 data 内含 `{items, total}` 分页结构
 - **前端 HTTP 客户端：** 自封装 fetch wrapper（`lib/api-client.ts`），自动注入 JWT、拦截 401 跳转登录、规范化错误；API 函数返回类型为 `data` 字段内容
 - **前端状态管理：** 服务端数据由 TanStack Query 管理（queries/），客户端状态由 Zustand 管理（stores/），页面内 UI 状态用 React useState
+- **前端 API 集成规范：** envelope 解包、字段命名对齐、token 读取、路由布局、SSE 解析等规则详见 `doc/前端设计原则.md` 第六至九章
 - **前端路径别名：** `@/` → `src/`（vite.config.ts + tsconfig.json 中配置）
 - **前端样式：** Tailwind CSS v4，设计 token 在 `src/index.css` 的 `@theme` 中定义（OKLCH 色彩空间），组件使用 shadcn/ui
 - **逻辑删除：** 所有表均有 `deleted_at TIMESTAMP` 字段，查询需过滤 `WHERE deleted_at IS NULL`
 - **主键：** BIGSERIAL 自增整数（用户 ID 即工作区目录名）
 - **时间戳：** `TIMESTAMP`（无时区），代码层统一写入 UTC
 - **后端分层：** `api/v1/`（路由）→ `services/`（业务）→ `models/`（ORM），AI 模块由 stream 端点直接调用
-- **SSE 格式：** `event: <type>\ndata: <json>\n\n`，token 事件携带 `{type, content}`，message_start / message_end 包裹每次对话
+- **SSE 格式：** `event: <type>\ndata: <json>\n\n`，token 事件携带 `{type, content}`，message_start / message_end 包裹每次对话；**前端解析规则见 `doc/前端设计原则.md` 第九章**
 - **前端构建：** `tsc -b && vite build`，TypeScript 严格模式（noUnusedLocals / noUnusedParameters）
 - **Git 提交：** 每次提交使用 Conventional Commits 格式，描述使用中文
 
