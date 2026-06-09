@@ -7,6 +7,7 @@ POST /api/conversations/{id}/stream
 
 import asyncio
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,8 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.ai import AiClient
 from app.services import conversation_service as svc
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["AI流式对话"])
 
@@ -54,48 +57,55 @@ async def stream_chat(
         assistant_tool_calls: list[dict] = []
         tool_results: list[dict] = []  # {tool_call_id, name, content}
 
-        async for chunk in client.stream(user_content, history):
-            if chunk["type"] == "token":
-                assistant_content_parts.append(chunk["content"])
-                yield _sse("token", {"type": "text", "content": chunk["content"]})
+        try:
+            async for chunk in client.stream(user_content, history):
+                if chunk["type"] == "token":
+                    assistant_content_parts.append(chunk["content"])
+                    yield _sse("token", {"type": "text", "content": chunk["content"]})
 
-            elif chunk["type"] == "reasoning":
-                yield _sse("token", {"type": "reasoning", "content": chunk["content"]})
+                elif chunk["type"] == "reasoning":
+                    yield _sse("token", {"type": "reasoning", "content": chunk["content"]})
 
-            elif chunk["type"] == "tool_call":
-                tc = chunk["tool_call"]
-                assistant_tool_calls = [tc] if not assistant_tool_calls or assistant_tool_calls[-1]["id"] != tc["id"] else assistant_tool_calls
-                # 更新或添加
-                found = False
-                for i, existing in enumerate(assistant_tool_calls):
-                    if existing["id"] == tc["id"]:
-                        assistant_tool_calls[i] = tc
-                        found = True
-                        break
-                if not found:
-                    assistant_tool_calls.append(tc)
+                elif chunk["type"] == "tool_call":
+                    tc = chunk["tool_call"]
+                    assistant_tool_calls = [tc] if not assistant_tool_calls or assistant_tool_calls[-1]["id"] != tc["id"] else assistant_tool_calls
+                    # 更新或添加
+                    found = False
+                    for i, existing in enumerate(assistant_tool_calls):
+                        if existing["id"] == tc["id"]:
+                            assistant_tool_calls[i] = tc
+                            found = True
+                            break
+                    if not found:
+                        assistant_tool_calls.append(tc)
 
-                yield _sse("token", {
-                    "type": "tool_call_progress",
-                    "tool_call_id": tc["id"],
-                    "tool_name": tc["function"]["name"],
-                })
+                    yield _sse("token", {
+                        "type": "tool_call_progress",
+                        "tool_call_id": tc["id"],
+                        "tool_name": tc["function"]["name"],
+                    })
 
-            elif chunk["type"] == "tool_result":
-                tool_results.append({
-                    "tool_call_id": chunk["tool_call_id"],
-                    "name": chunk["name"],
-                    "content": chunk["content"],
-                })
-                yield _sse("token", {
-                    "type": "tool_result",
-                    "tool_call_id": chunk["tool_call_id"],
-                    "tool_name": chunk["name"],
-                    "content": chunk["content"],
-                })
+                elif chunk["type"] == "tool_result":
+                    tool_results.append({
+                        "tool_call_id": chunk["tool_call_id"],
+                        "name": chunk["name"],
+                        "content": chunk["content"],
+                    })
+                    yield _sse("token", {
+                        "type": "tool_result",
+                        "tool_call_id": chunk["tool_call_id"],
+                        "tool_name": chunk["name"],
+                        "content": chunk["content"],
+                    })
 
-            elif chunk["type"] == "done":
-                pass
+                elif chunk["type"] == "done":
+                    pass
+
+        except Exception as e:
+            logger.exception("SSE 流式对话异常: %s", e)
+            yield _sse("token", {"type": "text", "content": f"\n\n⚠️ 对话异常中断：{e}"})
+            yield _sse("message_end", {"done": True})
+            return
 
         # 持久化 assistant 消息
         if assistant_tool_calls:

@@ -70,9 +70,17 @@ root_logger.setLevel(logging.INFO)
 root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
-logging.getLogger("uvicorn").setLevel(logging.INFO)
-logging.getLogger("uvicorn.access").setLevel(logging.INFO)
-logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+# 清除 uvicorn 自身的 handler，强制走 root logger（日志文件 + stdout）
+for name in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
+    logger = logging.getLogger(name)
+    logger.handlers.clear()
+    logger.propagate = True
+    logger.setLevel(logging.INFO)
+
+# FastAPI / Starlette 的异常也走 root logger
+logging.getLogger("starlette").propagate = True
+logging.getLogger("fastapi").propagate = True
+logging.getLogger("httpx").propagate = True
 
 
 # ── 应用生命周期 ──────────────────────────────────────
