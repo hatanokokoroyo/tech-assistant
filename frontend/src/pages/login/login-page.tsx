@@ -35,13 +35,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await authApi.login(data);
-      setToken(res.access_token);
-      try {
-        const user = await authApi.getMe();
-        setUser(user);
-      } catch {
-        // getMe 失败不阻塞登录
-      }
+      setToken(res.token);
+      setUser(res.user);
       toast.success("登录成功");
     } catch (err) {
       toast.error((err as Error).message || "登录失败");

@@ -1,10 +1,12 @@
+import { useAuthStore } from "@/stores/auth-store";
+
 export interface ApiResponse<T> {
   code: number;
   message: string;
   data: T;
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
   apiMessage: string;
 
@@ -17,14 +19,8 @@ class ApiError extends Error {
 }
 
 function getToken(): string | null {
-  try {
-    const raw = localStorage.getItem("tech-assistant-auth");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { state?: { token?: string } };
-    return parsed?.state?.token ?? null;
-  } catch {
-    return null;
-  }
+  // 直接从 Zustand 内存状态读取（同步，无竞态）
+  return useAuthStore.getState().token;
 }
 
 async function request<T>(
@@ -90,5 +86,3 @@ export const apiClient = {
 
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
-
-export { ApiError };

@@ -12,8 +12,9 @@ interface RegisterRequest {
 }
 
 interface LoginResponse {
-  access_token: string;
+  token: string;
   token_type: string;
+  user: UserInfo;
 }
 
 export interface UserInfo {

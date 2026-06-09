@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useAuthStore } from "@/stores/auth-store";
 
 export type StreamEventType =
   | "text"
@@ -27,16 +28,7 @@ export function useSSE(options: UseSSEOptions) {
     async (conversationId: number, content: string) => {
       if (isStreaming) return;
 
-      const token = (() => {
-        try {
-          const raw = localStorage.getItem("tech-assistant-auth");
-          if (!raw) return null;
-          const parsed = JSON.parse(raw) as { state?: { token?: string } };
-          return parsed?.state?.token ?? null;
-        } catch {
-          return null;
-        }
-      })();
+      const token = useAuthStore.getState().token;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
