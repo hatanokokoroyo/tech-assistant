@@ -10,6 +10,7 @@ import AppLayout from "@/pages/app/layout";
 import FilePanel from "@/pages/app/file-panel";
 import ChatPanel from "@/pages/app/chat-panel";
 import RepoPanel from "@/pages/app/repo-panel";
+import SettingsPage from "@/pages/settings/settings-page";
 
 function ProtectedRoute() {
   const token = useAuthStore((s) => s.token);
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/projects" replace /> },
           { path: "projects", element: null },
+          { path: "settings", element: <SettingsPage /> },
           {
             path: "projects/:projectId",
             children: [

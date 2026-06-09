@@ -223,6 +223,7 @@ function SidebarProjectList() {
 
 function UserMenu() {
   const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -240,7 +241,7 @@ function UserMenu() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
-        <DropdownMenuItem disabled>
+        <DropdownMenuItem onClick={() => navigate("/settings")}>
           <Settings className="h-4 w-4" />
           设置
         </DropdownMenuItem>

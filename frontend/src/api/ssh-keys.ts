@@ -22,7 +22,5 @@ export const sshKeyApi = {
       return json.data as SshKey;
     });
   },
-  uploadText: (data: { name: string; public_key: string }) =>
-    apiClient.post<SshKey>("/api/ssh-keys", data),
   delete: (id: number) => apiClient.delete<void>(`/api/ssh-keys/${id}`),
 };
