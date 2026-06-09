@@ -117,6 +117,10 @@ ensure_data_dirs() {
         info "创建数据目录: $data_dir"
         mkdir -p "$data_dir"
     fi
+    if [ ! -d "./data/logs" ]; then
+        info "创建日志目录: ./data/logs"
+        mkdir -p "./data/logs"
+    fi
 }
 
 # ── 计时 ──────────────────────────────────────────────

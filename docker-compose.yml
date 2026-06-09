@@ -18,6 +18,7 @@ services:
       - .env
     volumes:
       - tech_assistant_data:/data/tech-assistant
+      - ./data/logs:/data/logs
     depends_on:
       postgres:
         condition: service_healthy
