@@ -5,7 +5,10 @@ import { queryKeys } from "./keys";
 export function useProjects() {
   return useQuery({
     queryKey: queryKeys.projects,
-    queryFn: projectApi.list,
+    queryFn: async () => {
+      const res = await projectApi.list();
+      return res.items;
+    },
   });
 }
 
@@ -13,7 +16,7 @@ export function useProject(id: number) {
   return useQuery({
     queryKey: queryKeys.project(id),
     queryFn: () => projectApi.get(id),
-    enabled: !!id,
+    enabled: !!id && !Number.isNaN(id),
   });
 }
 

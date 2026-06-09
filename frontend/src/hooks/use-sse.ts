@@ -5,13 +5,7 @@ export type StreamEventType =
   | "text"
   | "reasoning"
   | "tool_call_progress"
-  | "tool_result"
-  | "done";
-
-export interface StreamEvent {
-  type: StreamEventType;
-  content: string;
-}
+  | "tool_result";
 
 interface UseSSEOptions {
   onToken?: (type: StreamEventType, content: string) => void;
@@ -29,7 +23,6 @@ export function useSSE(options: UseSSEOptions) {
       if (isStreaming) return;
 
       const token = useAuthStore.getState().token;
-
       const controller = new AbortController();
       abortControllerRef.current = controller;
       setIsStreaming(true);
@@ -64,27 +57,46 @@ export function useSSE(options: UseSSEOptions) {
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
 
-          let currentEvent = "";
+          // SSE 规范：事件以 \n\n 分隔
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || ""; // 最后一个不完整的部分保留
 
-          for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              currentEvent = line.slice(7).trim();
-            } else if (line.startsWith("data: ") && currentEvent) {
-              try {
-                const data = JSON.parse(line.slice(6));
+          for (const part of parts) {
+            if (!part.trim()) continue;
 
-                if (currentEvent === "token" && data.type) {
-                  options.onToken?.(data.type, data.content || "");
-                } else if (currentEvent === "message_end") {
-                  options.onMessageEnd?.();
-                }
-              } catch {
-                // skip malformed JSON
+            let eventType = "";
+            let dataLines: string[] = [];
+
+            for (const line of part.split("\n")) {
+              if (line.startsWith("event: ")) {
+                eventType = line.slice(7).trim();
+              } else if (line.startsWith("data: ")) {
+                dataLines.push(line.slice(6));
+              } else if (line.startsWith("data:")) {
+                dataLines.push(line.slice(5));
               }
-              currentEvent = "";
+            }
+
+            if (!eventType || !dataLines.length) continue;
+            const dataStr = dataLines.join("\n");
+
+            try {
+              const data = JSON.parse(dataStr);
+
+              if (eventType === "message_start") {
+                options.onMessageStart?.();
+              } else if (eventType === "token" && data.type) {
+                // 后端 token 事件的 type: text / reasoning / tool_call_progress / tool_result
+                options.onToken?.(
+                  data.type as StreamEventType,
+                  data.content || "",
+                );
+              } else if (eventType === "message_end") {
+                options.onMessageEnd?.();
+              }
+            } catch {
+              // skip malformed JSON
             }
           }
         }

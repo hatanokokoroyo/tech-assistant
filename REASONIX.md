@@ -59,6 +59,9 @@ docker compose down -v                 # 停止并清除数据卷
 - **SSE 依赖 Nginx 配置** — `frontend/nginx.conf` 中 `proxy_buffering off` 是流式输出生效的必要条件
 - **前端设计原则** — 详见 `doc/record/前端重构设计.md` 和 `doc/前端设计原则.md`，开发时必须遵循
 
+## 开发原则
+- 每次开发完成后, 需要对改动内容进行一轮code review, 发现问题并修复.
+
 ## Git 提交规范
 - **每次提交必须使用 `npx cz`（或 `git cz`）**，遵循 Conventional Commits 格式
 - 提交类型：`feat`（新功能）、`fix`（修复）、`refactor`（重构）、`docs`（文档）、`chore`（杂项）、`style`（格式调整）

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 
-export function useAutoScroll(deps: unknown[]) {
+export function useAutoScroll(deps: React.DependencyList) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
 
@@ -11,11 +11,11 @@ export function useAutoScroll(deps: unknown[]) {
     }
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (shouldAutoScroll.current) {
       scrollToBottom();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   const handleScroll = useCallback(() => {

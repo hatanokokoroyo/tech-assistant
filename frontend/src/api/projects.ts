@@ -4,9 +4,14 @@ export interface Project {
   id: number;
   name: string;
   description: string | null;
-  user_id: number;
+  repo_count?: number;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
+}
+
+interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
 }
 
 interface CreateProjectDto {
@@ -20,7 +25,8 @@ interface UpdateProjectDto {
 }
 
 export const projectApi = {
-  list: () => apiClient.get<Project[]>("/api/projects"),
+  list: () =>
+    apiClient.get<PaginatedResponse<Project>>("/api/projects"),
   get: (id: number) => apiClient.get<Project>(`/api/projects/${id}`),
   create: (data: CreateProjectDto) =>
     apiClient.post<Project>("/api/projects", data),

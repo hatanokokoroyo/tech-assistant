@@ -5,8 +5,11 @@ import { queryKeys } from "./keys";
 export function useFileTree(projectId: number) {
   return useQuery({
     queryKey: queryKeys.files(projectId),
-    queryFn: () => fileApi.getTree(projectId),
-    enabled: !!projectId,
+    queryFn: async () => {
+      const res = await fileApi.getTree(projectId);
+      return res.tree;
+    },
+    enabled: !!projectId && !Number.isNaN(projectId),
   });
 }
 
@@ -14,7 +17,7 @@ export function useFile(projectId: number, filePath: string) {
   return useQuery({
     queryKey: queryKeys.file(projectId, filePath),
     queryFn: () => fileApi.get(projectId, filePath),
-    enabled: !!projectId && !!filePath,
+    enabled: !!projectId && !Number.isNaN(projectId) && !!filePath,
   });
 }
 

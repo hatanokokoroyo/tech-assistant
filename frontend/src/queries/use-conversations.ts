@@ -5,8 +5,11 @@ import { queryKeys } from "./keys";
 export function useConversations(projectId: number) {
   return useQuery({
     queryKey: queryKeys.conversations(projectId),
-    queryFn: () => conversationApi.list(projectId),
-    enabled: !!projectId,
+    queryFn: async () => {
+      const res = await conversationApi.list(projectId);
+      return res.items;
+    },
+    enabled: !!projectId && !Number.isNaN(projectId),
   });
 }
 
@@ -14,15 +17,7 @@ export function useConversation(id: number) {
   return useQuery({
     queryKey: queryKeys.conversation(id),
     queryFn: () => conversationApi.get(id),
-    enabled: !!id,
-  });
-}
-
-export function useMessages(conversationId: number) {
-  return useQuery({
-    queryKey: queryKeys.messages(conversationId),
-    queryFn: () => conversationApi.getMessages(conversationId),
-    enabled: !!conversationId,
+    enabled: !!id && !Number.isNaN(id),
   });
 }
 

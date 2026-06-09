@@ -7,11 +7,8 @@ import { useAuthStore } from "@/stores/auth-store";
 import LoginPage from "@/pages/login/login-page";
 import RegisterPage from "@/pages/register/register-page";
 import AppLayout from "@/pages/app/layout";
-import ProjectList from "@/pages/app/project-list";
 import FilePanel from "@/pages/app/file-panel";
-import FileEditor from "@/pages/app/file-editor";
 import ChatPanel from "@/pages/app/chat-panel";
-import ChatView from "@/pages/app/chat-view";
 import RepoPanel from "@/pages/app/repo-panel";
 
 function ProtectedRoute() {
@@ -42,15 +39,15 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <Navigate to="/projects" replace /> },
-          { path: "projects", element: <ProjectList /> },
+          { path: "projects", element: null },
           {
             path: "projects/:projectId",
             children: [
-              { index: true, element: null },
+              { index: true, element: <Navigate to="files" replace /> },
               { path: "files", element: <FilePanel /> },
-              { path: "files/*", element: <FileEditor /> },
+              { path: "files/*", element: <FilePanel /> },
               { path: "chat", element: <ChatPanel /> },
-              { path: "chat/:conversationId", element: <ChatView /> },
+              { path: "chat/:conversationId", element: <ChatPanel /> },
               { path: "repos", element: <RepoPanel /> },
             ],
           },

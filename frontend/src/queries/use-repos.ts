@@ -5,15 +5,18 @@ import { queryKeys } from "./keys";
 export function useRepos(projectId: number) {
   return useQuery({
     queryKey: queryKeys.repos(projectId),
-    queryFn: () => repoApi.list(projectId),
-    enabled: !!projectId,
+    queryFn: async () => {
+      const res = await repoApi.list(projectId);
+      return res.items;
+    },
+    enabled: !!projectId && !Number.isNaN(projectId),
   });
 }
 
 export function useCreateRepo(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; git_url: string }) =>
+    mutationFn: (data: { name: string; url: string }) =>
       repoApi.create(projectId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repos(projectId) });
@@ -35,7 +38,7 @@ export function useBranches(projectId: number, repoId: number) {
   return useQuery({
     queryKey: queryKeys.branches(projectId, repoId),
     queryFn: () => repoApi.getBranches(projectId, repoId),
-    enabled: !!projectId && !!repoId,
+    enabled: !!projectId && !Number.isNaN(projectId) && !!repoId,
   });
 }
 
