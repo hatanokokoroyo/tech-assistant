@@ -1,4 +1,4 @@
-import { Outlet, useNavigate, useParams } from "react-router";
+import { Outlet, useNavigate, useLocation } from "react-router";
 import {
   FolderOpen,
   Plus,
@@ -38,24 +38,33 @@ import { useCreateProject } from "@/queries/use-projects";
  * - 无 projectId → 显示侧栏（项目列表+创建）+ 右侧空状态
  */
 export default function AppLayout() {
-  const { projectId } = useParams();
-  const hasProject = !!projectId;
+  const location = useLocation();
+  const isInProject = location.pathname.startsWith("/projects/");
 
-  if (hasProject) {
+  if (isInProject) {
     // 子路由（files/chat/repos）各自用 PanelLayout 渲染完整三栏
     return <Outlet />;
   }
 
-  // 未选择项目：侧栏 + 右侧引导
+  // 非项目页面（/projects 列表、/settings 等）：侧栏 + 右侧内容
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar />
-      <main className="flex flex-1 items-center justify-center text-muted-foreground">
-        <div className="space-y-3 text-center">
-          <FolderOpen className="mx-auto h-12 w-12 opacity-30" />
-          <p className="text-sm">选择一个项目开始工作</p>
-        </div>
+      <main className="flex flex-1 overflow-hidden">
+        <Outlet />
       </main>
+    </div>
+  );
+}
+
+// ── /projects 路径下的占位 ──
+export function ProjectPlaceholder() {
+  return (
+    <div className="flex flex-1 items-center justify-center text-muted-foreground">
+      <div className="space-y-3 text-center">
+        <FolderOpen className="mx-auto h-12 w-12 opacity-30" />
+        <p className="text-sm">选择一个项目开始工作</p>
+      </div>
     </div>
   );
 }

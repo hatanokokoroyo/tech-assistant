@@ -6,7 +6,7 @@ import {
 import { useAuthStore } from "@/stores/auth-store";
 import LoginPage from "@/pages/login/login-page";
 import RegisterPage from "@/pages/register/register-page";
-import AppLayout from "@/pages/app/layout";
+import AppLayout, { ProjectPlaceholder } from "@/pages/app/layout";
 import FilePanel from "@/pages/app/file-panel";
 import ChatPanel from "@/pages/app/chat-panel";
 import RepoPanel from "@/pages/app/repo-panel";
@@ -40,7 +40,7 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <Navigate to="/projects" replace /> },
-          { path: "projects", element: null },
+          { path: "projects", element: <ProjectPlaceholder /> },
           { path: "settings", element: <SettingsPage /> },
           {
             path: "projects/:projectId",
