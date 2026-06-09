@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
@@ -34,7 +34,7 @@ async def get_ssh_key(user: User = Depends(get_current_user), db: AsyncSession =
 @router.post("")
 async def upload_ssh_key(
     file: UploadFile = File(None),
-    private_key_content: str | None = None,
+    private_key_content: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
