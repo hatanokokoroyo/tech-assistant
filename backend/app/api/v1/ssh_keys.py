@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import re
 from pathlib import Path
 from app.db.session import get_db
 from app.core.deps import get_current_user
@@ -46,6 +47,9 @@ async def upload_ssh_key(
             content = private_key_content
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请上传私钥文件或粘贴私钥内容")
+
+        # 规范化私钥格式：确保 BEGIN/END 标记独占一行
+        content = _normalize_private_key(content)
 
         # 保存到沙箱
         ssh_dir = sandbox_root(user.id) / ".ssh"
@@ -103,6 +107,26 @@ async def delete_ssh_key(
         os.remove(key.file_path)
     await db.commit()
     return {"code": 0, "message": "ok", "data": None}
+
+
+def _normalize_private_key(content: str) -> str:
+    """规范化私钥格式：确保 BEGIN/END 标记独占一行，与 base64 数据之间有换行。"""
+    # 在 BEGIN 标记后插入换行（如果紧跟 base64 数据）
+    content = re.sub(
+        r"(-----BEGIN [A-Z ]+-----)(\S)",
+        r"\1\n\2",
+        content,
+    )
+    # 在 END 标记前插入换行（如果前面紧跟 base64 数据）
+    content = re.sub(
+        r"(\S)(-----END [A-Z ]+-----)",
+        r"\1\n\2",
+        content,
+    )
+    # 确保末尾有换行
+    if not content.endswith("\n"):
+        content += "\n"
+    return content
 
 
 def _get_fingerprint(key_path: str) -> str:
