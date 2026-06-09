@@ -8,7 +8,7 @@ class SshKey(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
-    fingerprint = Column(String(64))
+    fingerprint = Column(String(256))
     file_path = Column(String(500), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     deleted_at = Column(DateTime)

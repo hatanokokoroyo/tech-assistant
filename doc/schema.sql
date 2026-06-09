@@ -68,7 +68,7 @@ COMMENT ON COLUMN code_repos.deleted_at       IS '逻辑删除时间';
 CREATE TABLE ssh_keys (
     id              BIGSERIAL       PRIMARY KEY,
     user_id         BIGINT          NOT NULL REFERENCES users(id),
-    fingerprint     VARCHAR(64),
+    fingerprint     VARCHAR(256),
     file_path       VARCHAR(500)    NOT NULL,
     created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
     deleted_at      TIMESTAMP
