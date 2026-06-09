@@ -1,7 +1,8 @@
 import logging
 import os
+from datetime import datetime
 from contextlib import asynccontextmanager
-from logging.handlers import TimedRotatingFileHandler
+from logging import FileHandler, StreamHandler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import router as api_router
@@ -11,30 +12,52 @@ from app.db.base import Base
 
 # ── 日志配置 ──────────────────────────────────────────
 LOG_DIR = "/data/logs"
-LOG_FILE = os.path.join(LOG_DIR, "backend.log")
-
 os.makedirs(LOG_DIR, exist_ok=True)
 
 
-def _namer(default_name: str) -> str:
-    """将 backend.log.20260609 改为 backend-20260609.log"""
-    # default_name 形如 /data/logs/backend.log.20260609
-    base, date_part = default_name.rsplit(".", 1)
-    return f"{base}-{date_part}.log"
+class DateFileHandler(logging.Handler):
+    """按天切换日志文件：backend-YYYYMMDD.log"""
+
+    def __init__(self, log_dir: str, prefix: str = "backend"):
+        super().__init__()
+        self.log_dir = log_dir
+        self.prefix = prefix
+        self._current_date: str = ""
+        self._file_handler: FileHandler | None = None
+
+    def _get_filename(self) -> str:
+        date_str = datetime.now().strftime("%Y%m%d")
+        return os.path.join(self.log_dir, f"{self.prefix}-{date_str}.log")
+
+    def _ensure_handler(self) -> FileHandler:
+        today = datetime.now().strftime("%Y%m%d")
+        if self._file_handler is None or today != self._current_date:
+            if self._file_handler:
+                self._file_handler.close()
+            self._current_date = today
+            self._file_handler = FileHandler(
+                self._get_filename(), mode="a", encoding="utf-8"
+            )
+            self._file_handler.setFormatter(self.formatter)
+        return self._file_handler
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            handler = self._ensure_handler()
+            handler.emit(record)
+        except Exception:
+            self.handleError(record)
+
+    def close(self) -> None:
+        if self._file_handler:
+            self._file_handler.close()
+        super().close()
 
 
-file_handler = TimedRotatingFileHandler(
-    LOG_FILE,
-    when="midnight",
-    interval=1,
-    backupCount=30,
-    encoding="utf-8",
-)
-file_handler.suffix = "%Y%m%d"
-file_handler.namer = _namer
+file_handler = DateFileHandler(LOG_DIR)
 file_handler.setLevel(logging.INFO)
 
-console_handler = logging.StreamHandler()
+console_handler = StreamHandler()
 console_handler.setLevel(logging.INFO)
 
 log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -47,7 +70,6 @@ root_logger.setLevel(logging.INFO)
 root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
-# uvicorn 的 access/error logger 也走 root logger
 logging.getLogger("uvicorn").setLevel(logging.INFO)
 logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 logging.getLogger("uvicorn.error").setLevel(logging.INFO)
