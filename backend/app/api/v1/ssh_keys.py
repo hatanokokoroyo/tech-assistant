@@ -38,38 +38,44 @@ async def upload_ssh_key(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if file:
-        content = (await file.read()).decode("utf-8")
-    elif private_key_content:
-        content = private_key_content
-    else:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请上传私钥文件或粘贴私钥内容")
+    try:
+        if file and file.filename:
+            content = (await file.read()).decode("utf-8", errors="replace")
+        elif private_key_content:
+            content = private_key_content
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请上传私钥文件或粘贴私钥内容")
 
-    # 保存到沙箱
-    ssh_dir = sandbox_root(user.id) / ".ssh"
-    ssh_dir.mkdir(parents=True, exist_ok=True)
-    key_path = ssh_dir / "id_rsa"
-    key_path.write_text(content, encoding="utf-8")
-    key_path.chmod(0o600)
+        # 保存到沙箱
+        ssh_dir = sandbox_root(user.id) / ".ssh"
+        ssh_dir.mkdir(parents=True, exist_ok=True)
+        key_path = ssh_dir / "id_rsa"
+        key_path.write_text(content, encoding="utf-8")
+        key_path.chmod(0o600)
 
-    # 获取指纹
-    fingerprint = _get_fingerprint(str(key_path))
+        # 获取指纹
+        fingerprint = _get_fingerprint(str(key_path))
 
-    # 标记旧密钥为已删除
-    old_result = await db.execute(
-        select(SshKey).where(SshKey.user_id == user.id, SshKey.deleted_at.is_(None))
-    )
-    for old_key in old_result.scalars().all():
-        old_key.deleted_at = _func_now()
+        # 标记旧密钥为已删除
+        old_result = await db.execute(
+            select(SshKey).where(SshKey.user_id == user.id, SshKey.deleted_at.is_(None))
+        )
+        for old_key in old_result.scalars().all():
+            old_key.deleted_at = _func_now()
 
-    ssh_key = SshKey(
-        user_id=user.id,
-        fingerprint=fingerprint,
-        file_path=str(key_path),
-    )
-    db.add(ssh_key)
-    await db.commit()
-    await db.refresh(ssh_key)
+        ssh_key = SshKey(
+            user_id=user.id,
+            fingerprint=fingerprint,
+            file_path=str(key_path),
+        )
+        db.add(ssh_key)
+        await db.commit()
+        await db.refresh(ssh_key)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"上传失败: {str(e)}")
+
     return {"code": 0, "message": "ok", "data": SshKeyResponse(
         id=ssh_key.id,
         fingerprint=fingerprint,
