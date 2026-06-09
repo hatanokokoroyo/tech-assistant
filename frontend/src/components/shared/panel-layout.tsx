@@ -125,7 +125,7 @@ export default function PanelLayout({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <Settings className="h-4 w-4" />
                 设置
               </DropdownMenuItem>
