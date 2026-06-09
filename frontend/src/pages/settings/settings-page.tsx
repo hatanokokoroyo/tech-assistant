@@ -99,7 +99,7 @@ function SshKeySection() {
               <span className="text-sm font-medium">SSH 私钥</span>
             </div>
             <p className="font-mono text-xs text-muted-foreground">
-              {sshKey.fingerprint || "指纹获取中..."}
+              {sshKey.fingerprint || "指纹未获取（密钥可能格式不标准）"}
             </p>
             <p className="text-xs text-muted-foreground">
               上传于 {sshKey.created_at}

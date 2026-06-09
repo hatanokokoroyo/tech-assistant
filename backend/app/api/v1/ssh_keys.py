@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from pathlib import Path
 from app.db.session import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -105,9 +106,39 @@ async def delete_ssh_key(
 
 
 def _get_fingerprint(key_path: str) -> str:
+    """获取 SSH 密钥指纹。先尝试直接读取（公钥），失败则从私钥导出公钥后再读。"""
+    # 尝试直接读取（适用于公钥文件）
+    fingerprint = _run_ssh_keygen_fingerprint(key_path)
+    if fingerprint:
+        return fingerprint
+
+    # 从私钥导出公钥，再获取指纹
+    pub_path = key_path + ".pub"
     try:
         result = subprocess.run(
-            ["ssh-keygen", "-lf", key_path],
+            ["ssh-keygen", "-y", "-f", key_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            Path(pub_path).write_text(result.stdout, encoding="utf-8")
+            fingerprint = _run_ssh_keygen_fingerprint(pub_path)
+    except Exception:
+        pass
+    finally:
+        # 清理临时公钥文件
+        try:
+            Path(pub_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return fingerprint or ""
+
+
+def _run_ssh_keygen_fingerprint(path: str) -> str:
+    """运行 ssh-keygen -lf 获取指纹，成功返回指纹字符串，失败返回空。"""
+    try:
+        result = subprocess.run(
+            ["ssh-keygen", "-lf", path],
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0:
