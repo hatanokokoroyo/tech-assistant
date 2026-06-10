@@ -5,7 +5,6 @@ POST /api/conversations/{id}/stream
   → 同时将消息持久化到 PostgreSQL
 """
 
-import asyncio
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -68,7 +67,6 @@ async def stream_chat(
 
                 elif chunk["type"] == "tool_call":
                     tc = chunk["tool_call"]
-                    assistant_tool_calls = [tc] if not assistant_tool_calls or assistant_tool_calls[-1]["id"] != tc["id"] else assistant_tool_calls
                     # 更新或添加
                     found = False
                     for i, existing in enumerate(assistant_tool_calls):
@@ -104,41 +102,23 @@ async def stream_chat(
         except Exception as e:
             logger.exception("SSE 流式对话异常: %s", e)
             yield _sse("token", {"type": "text", "content": f"\n\n⚠️ 对话异常中断：{e}"})
+            # 异常时仍保存已收到的部分消息，避免孤立 user 消息
+            try:
+                await _persist_partial(
+                    db, conversation_id,
+                    assistant_content_parts, assistant_tool_calls, tool_results,
+                )
+            except Exception:
+                logger.exception("保存部分消息失败")
+                yield _sse("token", {"type": "text", "content": "\n\n⚠️ 部分消息保存失败，对话记录可能不完整"})
             yield _sse("message_end", {"done": True})
             return
 
-        # 持久化 assistant 消息
-        if assistant_tool_calls:
-            await svc.save_assistant_message(
-                db, conversation_id,
-                "".join(assistant_content_parts) or None,
-                assistant_tool_calls,
-            )
-            # 补充缺失的 tool 响应（保证消息链完整性）
-            saved_tool_ids = {tr["tool_call_id"] for tr in tool_results}
-            for tc in assistant_tool_calls:
-                tc_id = tc.get("id", "")
-                if tc_id and tc_id not in saved_tool_ids:
-                    logger.warning("tool_call %s 缺少响应，补充错误结果", tc_id)
-                    tool_results.append({
-                        "tool_call_id": tc_id,
-                        "name": tc["function"]["name"],
-                        "content": f"Error: 工具 {tc['function']['name']} 执行未完成",
-                    })
-            # 持久化 tool 消息
-            for tr in tool_results:
-                await svc.save_tool_message(
-                    db, conversation_id,
-                    tr["tool_call_id"], tr["name"], tr["content"],
-                )
-        else:
-            await svc.save_assistant_message(
-                db, conversation_id,
-                "".join(assistant_content_parts),
-            )
-
-        await svc.touch_conversation(db, conversation_id)
-        await db.commit()
+        # 持久化消息
+        await _persist_partial(
+            db, conversation_id,
+            assistant_content_parts, assistant_tool_calls, tool_results,
+        )
 
         yield _sse("message_end", {"done": True})
 
@@ -154,3 +134,38 @@ async def stream_chat(
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _persist_partial(
+    db: AsyncSession,
+    conversation_id: int,
+    content_parts: list[str],
+    tool_calls: list[dict],
+    tool_results: list[dict],
+):
+    """保存已收到的部分消息，保证消息链完整性。"""
+    content = "".join(content_parts) or None
+
+    if tool_calls:
+        await svc.save_assistant_message(db, conversation_id, content, tool_calls)
+        # 补充缺失的 tool 响应（使用副本，不修改调用方的列表）
+        all_results = list(tool_results)
+        saved_ids = {tr["tool_call_id"] for tr in all_results}
+        for tc in tool_calls:
+            tc_id = tc.get("id", "")
+            if tc_id and tc_id not in saved_ids:
+                all_results.append({
+                    "tool_call_id": tc_id,
+                    "name": tc["function"]["name"],
+                    "content": f"Error: 工具 {tc['function']['name']} 执行未完成（对话异常中断）",
+                })
+        for tr in all_results:
+            await svc.save_tool_message(
+                db, conversation_id,
+                tr["tool_call_id"], tr["name"], tr["content"],
+            )
+    elif content:
+        await svc.save_assistant_message(db, conversation_id, content)
+
+    await svc.touch_conversation(db, conversation_id)
+    await db.commit()

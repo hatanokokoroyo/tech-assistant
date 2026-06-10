@@ -207,7 +207,7 @@ function RepoCard({
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{repo.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{repo.url}</p>
+          <p className="break-all text-xs text-muted-foreground">{repo.url}</p>
         </div>
         <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onDelete}>
           <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
