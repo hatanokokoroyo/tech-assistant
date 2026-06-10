@@ -35,7 +35,7 @@ docker compose down -v                 # 停止并清除数据卷
 - **逻辑删除：** 所有表有 `deleted_at`，查询过滤 `WHERE deleted_at IS NULL`
 - **时间戳：** `TIMESTAMP`（无时区），UTC，响应中格式化为 `"%Y-%m-%d %H:%M:%S"`
 - **SSE 格式：** `event: <type>\ndata: <json>\n\n`，详见设计原则文档
-- **Git 提交：** Conventional Commits 格式，描述使用中文
+- **Git 提交：** Conventional Commits 格式，描述使用中文. 没有明确指令, 禁止自发提交代码.
 
 ## 注意事项
 - 需要 Docker Desktop（bind mount 宿主机路径）
