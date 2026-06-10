@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams } from "react-router";
 import { GitBranch, Plus, Trash2, RefreshCw, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,32 @@ function RepoPanelHeader({ pid }: { pid: number }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [gitUrl, setGitUrl] = useState("");
+  const nameManuallyEdited = useRef(false);
   const createRepo = useCreateRepo(pid);
+
+  // 从 Git URL 提取仓库名：取最后一段，去掉 .git 后缀
+  const extractNameFromUrl = useCallback((url: string): string => {
+    const match = url.match(/([^/]+?)(?:\.git)?$/);
+    return match ? match[1] : "";
+  }, []);
+
+  // 当 Git URL 变化且名称未被手动编辑时，自动填入仓库名
+  useEffect(() => {
+    if (nameManuallyEdited.current || !gitUrl.trim()) return;
+    const extracted = extractNameFromUrl(gitUrl);
+    if (extracted && extracted !== name) {
+      setName(extracted);
+    }
+  }, [gitUrl, extractNameFromUrl, name]);
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setName("");
+      setGitUrl("");
+      nameManuallyEdited.current = false;
+    }
+  };
 
   const handleCreate = async () => {
     if (!name.trim() || !gitUrl.trim()) return;
@@ -68,6 +93,7 @@ function RepoPanelHeader({ pid }: { pid: number }) {
       await createRepo.mutateAsync({ name: name.trim(), url: gitUrl.trim() });
       setName("");
       setGitUrl("");
+      nameManuallyEdited.current = false;
       setDialogOpen(false);
       toast.success("仓库已添加");
     } catch {
@@ -85,13 +111,13 @@ function RepoPanelHeader({ pid }: { pid: number }) {
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => refetch()}>
             <RefreshCw className="h-3 w-3" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDialogOpen(true)}>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDialogOpenChange(true)}>
             <Plus className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>添加仓库</DialogTitle>
@@ -100,7 +126,7 @@ function RepoPanelHeader({ pid }: { pid: number }) {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="repo-name">仓库名称</Label>
-              <Input id="repo-name" placeholder="my-repo" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input id="repo-name" placeholder="my-repo" value={name} onChange={(e) => { nameManuallyEdited.current = true; setName(e.target.value); }} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="git-url">Git URL</Label>
@@ -108,7 +134,7 @@ function RepoPanelHeader({ pid }: { pid: number }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => handleDialogOpenChange(false)}>取消</Button>
             <Button onClick={handleCreate} disabled={!name.trim() || !gitUrl.trim() || createRepo.isPending}>
               {createRepo.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               添加
