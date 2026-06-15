@@ -56,3 +56,14 @@ export function useCheckoutBranch(projectId: number) {
     },
   });
 }
+
+export function useFetchAllRepos(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => repoApi.fetchAll(projectId),
+    onSuccess: () => {
+      // 前缀匹配，同时刷新 repos 列表 + 所有 branches 缓存
+      qc.invalidateQueries({ queryKey: queryKeys.repos(projectId) });
+    },
+  });
+}

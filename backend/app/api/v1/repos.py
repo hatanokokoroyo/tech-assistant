@@ -134,6 +134,35 @@ async def get_branches(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"获取分支失败: {str(e)}")
 
 
+@router.post("/projects/{project_id}/repos/fetch-all")
+async def fetch_all_repos(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """对项目下所有代码仓库执行 git fetch --all --prune，刷新远程分支。"""
+    await _get_project(project_id, user.id, db)
+    result = await db.execute(
+        select(CodeRepo).where(
+            CodeRepo.custom_project_id == project_id,
+            CodeRepo.deleted_at.is_(None),
+        )
+    )
+    repos = result.scalars().all()
+
+    results = []
+    for repo in repos:
+        entry = {"repo_id": repo.id, "name": repo.name, "status": "ok", "error": None}
+        try:
+            repo_service.git_fetch(user.id, project_id, repo.name)
+        except Exception as e:
+            entry["status"] = "error"
+            entry["error"] = str(e)
+        results.append(entry)
+
+    return {"code": 0, "message": "ok", "data": {"results": results}}
+
+
 @router.post("/projects/{project_id}/repos/{repo_id}/checkout")
 async def checkout_branch(
     project_id: int,

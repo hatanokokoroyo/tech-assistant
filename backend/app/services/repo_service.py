@@ -65,3 +65,20 @@ def git_checkout(user_id: int, project_id: int, repo_name: str, branch: str):
         text=True,
         timeout=30,
     )
+
+
+def git_fetch(user_id: int, project_id: int, repo_name: str):
+    """对指定仓库执行 git fetch --all --prune，更新远程分支信息。"""
+    repo_dir = sandbox_root(user_id) / str(project_id) / repo_name
+    if not repo_dir.exists():
+        raise FileNotFoundError(f"仓库目录不存在: {repo_dir}")
+
+    env = _ssh_env(user_id)
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "fetch", "--all", "--prune"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+    )

@@ -1,10 +1,17 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "react-router";
-import { GitBranch, Plus, Trash2, RefreshCw, Check, Loader2 } from "lucide-react";
+import { ChevronDown, GitBranch, Plus, Trash2, RefreshCw, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -30,8 +37,8 @@ import {
   useDeleteRepo,
   useBranches,
   useCheckoutBranch,
+  useFetchAllRepos,
 } from "@/queries/use-repos";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export default function RepoPanel() {
@@ -56,7 +63,7 @@ export default function RepoPanel() {
 }
 
 function RepoPanelHeader({ pid }: { pid: number }) {
-  const { refetch } = useRepos(pid);
+  const fetchAll = useFetchAllRepos(pid);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [gitUrl, setGitUrl] = useState("");
@@ -101,6 +108,22 @@ function RepoPanelHeader({ pid }: { pid: number }) {
     }
   };
 
+  const handleRefresh = async () => {
+    try {
+      const res = await fetchAll.mutateAsync();
+      const { results } = res;
+      const okCount = results.filter((r) => r.status === "ok").length;
+      const errCount = results.filter((r) => r.status === "error").length;
+      if (errCount === 0) {
+        toast.success(`已刷新 ${okCount} 个仓库的远程分支`);
+      } else {
+        toast.success(`已刷新 ${okCount} 个仓库，${errCount} 个失败`);
+      }
+    } catch {
+      toast.error("刷新远程分支失败");
+    }
+  };
+
   return (
     <>
       <div className="flex items-center justify-between border-b px-3 py-2">
@@ -108,8 +131,8 @@ function RepoPanelHeader({ pid }: { pid: number }) {
           仓库
         </span>
         <div className="flex gap-1">
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => refetch()}>
-            <RefreshCw className="h-3 w-3" />
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleRefresh} disabled={fetchAll.isPending}>
+            {fetchAll.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
           </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDialogOpenChange(true)}>
             <Plus className="h-3.5 w-3.5" />
@@ -219,6 +242,26 @@ function RepoCard({
   const { data: branches } = useBranches(projectId, repo.id);
   const checkout = useCheckoutBranch(projectId);
 
+  const currentBranch = branches?.current_branch ?? repo.current_branch;
+
+  // 去重合并本地+远程分支：远程去掉 origin/ 前缀，合并去重，current_branch 排最前
+  const mergedBranches = useMemo(() => {
+    if (!branches) return { all: [], localOnly: [], remoteOnly: [] };
+    const local = branches.local_branches ?? [];
+    const remoteStripped = (branches.remote_branches ?? []).map((b) => b.replace(/^origin\//, ""));
+    const all = [...new Set([...local, ...remoteStripped])].sort((a, b) => a.localeCompare(b));
+    const cur = branches.current_branch;
+    if (cur && all.includes(cur)) {
+      all.splice(all.indexOf(cur), 1);
+      all.unshift(cur);
+    }
+    return {
+      all,
+      localOnly: local,
+      remoteOnly: [...new Set(remoteStripped.filter((b) => !local.includes(b)))],
+    };
+  }, [branches]);
+
   const handleCheckout = async (branch: string) => {
     try {
       await checkout.mutateAsync({ repoId: repo.id, branch });
@@ -240,33 +283,51 @@ function RepoCard({
         </Button>
       </div>
 
-      {/* 当前分支 */}
-      <div className="mt-2 flex items-center gap-1.5">
-        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-        <Badge variant="secondary" className="text-xs">
-          {branches?.current_branch ?? repo.current_branch}
-        </Badge>
-      </div>
-
-      {/* 分支列表 */}
-      {branches && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {branches.local_branches.map((branch) => (
-            <button
-              key={branch}
-              onClick={() => handleCheckout(branch)}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors hover:bg-accent",
-                branch === (branches?.current_branch ?? repo.current_branch) && "border-primary bg-primary/5",
+      {/* 分支选择 - DropdownMenu */}
+      <div className="mt-2">
+        {!branches ? (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            加载分支...
+          </div>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors hover:bg-accent">
+                <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>{currentBranch}</span>
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+              <DropdownMenuLabel>本地分支</DropdownMenuLabel>
+              {mergedBranches.localOnly.length === 0 && (
+                <DropdownMenuItem disabled className="text-muted-foreground">
+                  无本地分支
+                </DropdownMenuItem>
               )}
-              disabled={checkout.isPending}
-            >
-              {branch === (branches?.current_branch ?? repo.current_branch) && <Check className="h-3 w-3 text-primary" />}
-              {branch}
-            </button>
-          ))}
-        </div>
-      )}
+              {mergedBranches.localOnly.map((branch) => (
+                <DropdownMenuItem key={branch} onClick={() => handleCheckout(branch)} disabled={checkout.isPending}>
+                  {branch === currentBranch && <Check className="h-3.5 w-3.5 text-primary" />}
+                  {branch === currentBranch ? <span className="font-medium">{branch}</span> : branch}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>远程分支</DropdownMenuLabel>
+              {mergedBranches.remoteOnly.length === 0 && (
+                <DropdownMenuItem disabled className="text-muted-foreground">
+                  无远程分支
+                </DropdownMenuItem>
+              )}
+              {mergedBranches.remoteOnly.map((branch) => (
+                <DropdownMenuItem key={branch} onClick={() => handleCheckout(branch)} disabled={checkout.isPending}>
+                  {branch}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
     </div>
   );
 }

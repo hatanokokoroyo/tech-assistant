@@ -14,6 +14,17 @@ export interface Branches {
   current_branch: string;
 }
 
+export interface FetchAllResult {
+  repo_id: number;
+  name: string;
+  status: "ok" | "error";
+  error: string | null;
+}
+
+export interface FetchAllResponse {
+  results: FetchAllResult[];
+}
+
 interface PaginatedResponse<T> {
   items: T[];
   total: number;
@@ -38,5 +49,9 @@ export const repoApi = {
     apiClient.post<{ current_branch: string }>(
       `/api/projects/${projectId}/repos/${repoId}/checkout`,
       { branch },
+    ),
+  fetchAll: (projectId: number) =>
+    apiClient.post<FetchAllResponse>(
+      `/api/projects/${projectId}/repos/fetch-all`,
     ),
 };
