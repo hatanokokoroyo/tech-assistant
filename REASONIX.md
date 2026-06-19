@@ -36,6 +36,7 @@ docker compose down -v                 # 停止并清除数据卷
 - **时间戳：** `TIMESTAMP`（无时区），UTC，响应中格式化为 `"%Y-%m-%d %H:%M:%S"`
 - **SSE 格式：** `event: <type>\ndata: <json>\n\n`，详见设计原则文档
 - **Git 提交：** Conventional Commits 格式，描述使用中文. 没有明确指令, 禁止自发提交代码.
+- **代码检索：** 优先使用 CodeGraph MCP 工具（`codegraph_explore` / `codegraph_search` / `codegraph_node` / `codegraph_callers`）进行代码搜索和分析，而非使用 `grep` 工具。CodeGraph 基于完整知识图谱，能提供符号定义、调用链、依赖关系等语义信息，比纯文本 grep 更准确高效。
 
 ## 注意事项
 - 需要 Docker Desktop（bind mount 宿主机路径）
