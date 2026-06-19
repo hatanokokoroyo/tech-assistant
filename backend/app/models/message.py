@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Column, BigInteger, Integer, Float, String, Text, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -14,6 +14,10 @@ class Message(Base):
     tool_calls = Column(JSONB)
     tool_call_id = Column(String(100))
     tool_name = Column(String(100))
+    prompt_tokens = Column(Integer, nullable=True)
+    completion_tokens = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+    cost = Column(Float, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     deleted_at = Column(DateTime)
 

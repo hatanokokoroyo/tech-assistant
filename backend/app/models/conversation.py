@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, func
+from sqlalchemy import Column, BigInteger, Integer, Float, String, DateTime, ForeignKey, func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -10,6 +10,12 @@ class Conversation(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     custom_project_id = Column(BigInteger, ForeignKey("custom_projects.id"), nullable=False)
     title = Column(String(200))
+    total_prompt_tokens = Column(Integer, default=0, nullable=False)
+    total_completion_tokens = Column(Integer, default=0, nullable=False)
+    total_tokens = Column(Integer, default=0, nullable=False)
+    total_cost = Column(Float, default=0.0, nullable=False)
+    total_api_rounds = Column(Integer, default=0, nullable=False)
+    total_cache_hit_tokens = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now())
     deleted_at = Column(DateTime)

@@ -47,6 +47,12 @@ async def get_conversation(
         "id": conv.id,
         "title": conv.title,
         "messages": messages,
+        "total_prompt_tokens": conv.total_prompt_tokens,
+        "total_completion_tokens": conv.total_completion_tokens,
+        "total_tokens": conv.total_tokens,
+        "total_cost": conv.total_cost,
+        "total_api_rounds": conv.total_api_rounds,
+        "total_cache_hit_tokens": conv.total_cache_hit_tokens,
         "created_at": _fmt(conv.created_at),
         "updated_at": _fmt(conv.updated_at),
     }}

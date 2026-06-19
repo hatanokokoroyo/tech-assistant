@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router";
-import { MessageSquare, Plus, Trash2, Shield } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Shield, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -20,13 +20,13 @@ import {
 } from "@/queries/use-conversations";
 import { useSSE, type StreamEventType, type ApprovalRequestEvent, type ToolDeniedEvent } from "@/hooks/use-sse";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
-import type { Message } from "@/api/conversations";
+import type { Message, UsageInfo } from "@/api/conversations";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/format";
 import { useState, useCallback, useRef, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import MarkdownContent from "@/components/chat/markdown-content";
 import { ToolApprovalDialog, type ApprovalRequest } from "@/components/app/tool-approval-dialog";
+import UsagePanel from "@/components/chat/usage-panel";
 import { toolPermissionApi } from "@/api/tool-permissions";
 import { toast } from "sonner";
 
@@ -216,12 +216,52 @@ function ChatViewContent({ convId }: { convId: number }) {
   const pendingApprovalsRef = useRef<ApprovalRequest[]>([]);
   const submittedRef = useRef(false);  // 防止 Dialog onOpenChange 触发二次提交
 
+  // 用量面板
+  const [showUsage, setShowUsage] = useState(true);
+  const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
+  const hasReceivedLiveUsage = useRef(false);
+
+  // 切换对话时重置用量状态
+  useEffect(() => {
+    setUsageInfo(null);
+    setLocalMessages([]);
+    setInputValue("");
+    streamingRef.current = { text: "", reasoning: "" };
+    hasReceivedLiveUsage.current = false;
+  }, [convId]);
+
   // 同步服务端消息
   useEffect(() => {
     if (conversation?.messages) {
       setLocalMessages(conversation.messages);
     }
   }, [conversation]);
+
+  // 从历史数据恢复用量统计（仅在从未收到 SSE 推送时执行）
+  useEffect(() => {
+    if (conversation && conversation.total_tokens && conversation.total_tokens > 0
+        && !hasReceivedLiveUsage.current && usageInfo === null) {
+      // 找到最新的 assistant 消息，提取其 token 数据作为"上一轮"参考
+      const lastAssistant = [...(conversation.messages || [])]
+        .reverse()
+        .find(m => m.role === 'assistant' && m.total_tokens);
+      setUsageInfo({
+        round_prompt_tokens: lastAssistant?.prompt_tokens || 0,
+        round_completion_tokens: lastAssistant?.completion_tokens || 0,
+        round_total_tokens: lastAssistant?.total_tokens || 0,
+        round_cache_hit_tokens: null,
+        round_cache_miss_tokens: null,
+        round_cost: lastAssistant?.cost || 0,
+        total_prompt_tokens: conversation.total_prompt_tokens || 0,
+        total_completion_tokens: conversation.total_completion_tokens || 0,
+        total_tokens: conversation.total_tokens || 0,
+        total_cache_hit_tokens: conversation.total_cache_hit_tokens || 0,
+        total_cost: conversation.total_cost || 0,
+        api_rounds: conversation.total_api_rounds || 0,
+        model: undefined,
+      });
+    }
+  }, [conversation, usageInfo]);
 
   const { containerRef, handleScroll } = useAutoScroll([
     localMessages,
@@ -272,6 +312,10 @@ function ChatViewContent({ convId }: { convId: number }) {
     onToolDenied: useCallback((event: ToolDeniedEvent) => {
       toast.error(`工具 ${event.tool_name} 被拒绝：${event.reason === "policy_deny" ? "项目策略禁止" : "已拒绝"}`);
     }, []),
+    onUsageInfo: useCallback((usage: UsageInfo) => {
+      hasReceivedLiveUsage.current = true;
+      setUsageInfo(usage);
+    }, []),
   });
 
   // 提交审批决定
@@ -318,6 +362,8 @@ function ChatViewContent({ convId }: { convId: number }) {
     streamingRef.current = { text: "", reasoning: "" };
     pendingApprovalsRef.current = [];
     setApprovalRequests([]);
+    // 不清空 usageInfo：保留累计统计，等待新一轮 SSE 覆盖
+    hasReceivedLiveUsage.current = false;
     await send(convId, text);
   }, [inputValue, isStreaming, convId, send]);
 
@@ -330,88 +376,104 @@ function ChatViewContent({ convId }: { convId: number }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      {/* 工具栏 */}
-      <div className="flex items-center justify-end gap-1 border-b px-3 py-1.5">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          title="项目权限设置"
-          onClick={() => navigate(`/projects/${pid}/settings`)}
-        >
-          <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-        </Button>
-      </div>
-
-      {/* 消息列表 */}
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto min-h-0 px-4 py-4"
-      >
-        <div className="mx-auto max-w-3xl space-y-4">
-          {localMessages.filter(m => m.role !== "tool").map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
-          ))}
-          {isStreaming && streamingRef.current.text && (
-            <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
-                🤖
-              </div>
-              <div className="min-w-0 flex-1 space-y-2">
-                {streamingRef.current.reasoning && (
-                  <CollapsibleBlock title="思考过程" variant="reasoning">
-                    <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                      {streamingRef.current.reasoning}
-                    </p>
-                  </CollapsibleBlock>
-                )}
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {streamingRef.current.text}
-                  </ReactMarkdown>
-                </div>
-                <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground" />
-              </div>
-            </div>
-          )}
+    <div className="flex flex-1 overflow-hidden min-h-0">
+      {/* 主内容区 */}
+      <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+        {/* 工具栏 */}
+        <div className="flex items-center justify-end gap-1 border-b px-3 py-1.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            title="对话统计"
+            onClick={() => setShowUsage(!showUsage)}
+          >
+            <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            title="项目权限设置"
+            onClick={() => navigate(`/projects/${pid}/settings`)}
+          >
+            <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
         </div>
-      </div>
 
-      {/* 输入区 */}
-      <div className="border-t p-4">
-        <div className="mx-auto max-w-3xl">
-          <div className="flex gap-2">
-            <textarea
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-              className="min-h-[40px] max-h-[160px] flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              rows={1}
-            />
-            {isStreaming ? (
-              <Button variant="destructive" className="shrink-0" onClick={abort}>
-                停止
-              </Button>
-            ) : (
-              <Button
-                className="shrink-0"
-                onClick={handleSend}
-                disabled={!inputValue.trim()}
-              >
-                发送
-              </Button>
+        {/* 消息列表 */}
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto min-h-0 px-4 py-4"
+        >
+          <div className="mx-auto max-w-3xl space-y-4">
+            {localMessages.filter(m => m.role !== "tool").map((msg) => (
+              <MessageBubble key={msg.id} message={msg} />
+            ))}
+            {isStreaming && streamingRef.current.text && (
+              <div className="flex gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
+                  🤖
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  {streamingRef.current.reasoning && (
+                    <CollapsibleBlock title="思考过程" variant="reasoning">
+                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                        {streamingRef.current.reasoning}
+                      </p>
+                    </CollapsibleBlock>
+                  )}
+                  <MarkdownContent content={streamingRef.current.text} />
+                  <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground" />
+                </div>
+              </div>
             )}
           </div>
         </div>
+
+        {/* 输入区 */}
+        <div className="border-t p-4">
+          <div className="mx-auto max-w-3xl">
+            <div className="flex gap-2">
+              <textarea
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+                className="min-h-[40px] max-h-[160px] flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                rows={1}
+              />
+              {isStreaming ? (
+                <Button variant="destructive" className="shrink-0" onClick={abort}>
+                  停止
+                </Button>
+              ) : (
+                <Button
+                  className="shrink-0"
+                  onClick={handleSend}
+                  disabled={!inputValue.trim()}
+                >
+                  发送
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* 右侧用量面板 */}
+      {showUsage && (
+        <UsagePanel
+          usage={usageInfo}
+          onClose={() => setShowUsage(false)}
+        />
+      )}
 
       {/* 审批弹窗 */}
       <ToolApprovalDialog
@@ -441,18 +503,14 @@ function MessageBubble({ message }: { message: Message }) {
       <div className={cn("min-w-0 max-w-[80%] space-y-2", isUser && "text-right")}>
         <div
           className={cn(
-            "inline-block rounded-lg px-3 py-2 text-sm",
+            "inline-block max-w-full rounded-lg px-3 py-2 text-sm",
             isUser ? "bg-primary text-primary-foreground" : "bg-muted",
           )}
         >
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content || ""}
-              </ReactMarkdown>
-            </div>
+            <MarkdownContent content={message.content || ""} />
           )}
         </div>
         {message.tool_calls?.map((tc) => (

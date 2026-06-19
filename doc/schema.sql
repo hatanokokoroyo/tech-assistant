@@ -89,6 +89,12 @@ CREATE TABLE conversations (
     user_id             BIGINT          NOT NULL REFERENCES users(id),
     custom_project_id   BIGINT          NOT NULL REFERENCES custom_projects(id),
     title               VARCHAR(200),
+    total_prompt_tokens     INTEGER     NOT NULL DEFAULT 0,
+    total_completion_tokens INTEGER    NOT NULL DEFAULT 0,
+    total_tokens            INTEGER     NOT NULL DEFAULT 0,
+    total_cost              DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    total_api_rounds        INTEGER     NOT NULL DEFAULT 0,
+    total_cache_hit_tokens  INTEGER     NOT NULL DEFAULT 0,
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     deleted_at          TIMESTAMP
@@ -113,6 +119,10 @@ CREATE TABLE messages (
     tool_calls          JSONB,
     tool_call_id        VARCHAR(100),
     tool_name           VARCHAR(100),
+    prompt_tokens       INTEGER,
+    completion_tokens   INTEGER,
+    total_tokens        INTEGER,
+    cost                DOUBLE PRECISION,
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     deleted_at          TIMESTAMP
 );

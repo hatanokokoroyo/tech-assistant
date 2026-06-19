@@ -35,6 +35,13 @@ class AiClient:
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
         )
+        # 累计用量跟踪（跨多轮 agentic loop）
+        self._total_prompt_tokens = 0
+        self._total_completion_tokens = 0
+        self._total_cache_hit_tokens = 0
+        self._total_tokens = 0
+        self._total_cost = 0.0
+        self._api_rounds = 0
 
     # agentic loop 最大轮次，防止无限循环
     MAX_TOOL_ROUNDS: int = 5
@@ -77,8 +84,13 @@ class AiClient:
             assistant_content = ""
             assistant_tool_calls: list[dict] = []
             chunk_count = 0
+            round_usage = None
 
             async for event in stream:
+                # 捕获本轮用量（最后一个 chunk 携带 usage）
+                if event.usage is not None:
+                    round_usage = event.usage
+
                 delta = event.choices[0].delta if event.choices else None
                 if delta is None:
                     continue
@@ -117,6 +129,48 @@ class AiClient:
                 "[stream] ◀ 第 %d 轮响应完成: chunks=%d, content_len=%d, tool_calls=%d",
                 tool_round + 1, chunk_count, len(assistant_content), len(assistant_tool_calls),
             )
+
+            # ── 捕获本轮 usage 信息 ──
+            self._api_rounds += 1
+            prompt_tokens = round_usage.prompt_tokens if round_usage else 0
+            completion_tokens = round_usage.completion_tokens if round_usage else 0
+            total_tokens = round_usage.total_tokens if round_usage else 0
+            cache_hit_tokens = getattr(round_usage, "prompt_cache_hit_tokens", None) if round_usage else None
+            cache_miss_tokens = getattr(round_usage, "prompt_cache_miss_tokens", None) if round_usage else None
+            round_cost = self._calculate_cost(prompt_tokens, completion_tokens, cache_hit_tokens)
+
+            self._total_prompt_tokens += prompt_tokens
+            self._total_completion_tokens += completion_tokens
+            self._total_tokens += total_tokens
+            if cache_hit_tokens:
+                self._total_cache_hit_tokens += cache_hit_tokens
+            self._total_cost += round_cost
+
+            if round_usage:
+                logger.info(
+                    "[stream] 📊 第 %d 轮用量: prompt=%d, completion=%d, total=%d, "
+                    "cache_hit=%s, cache_miss=%s, cost=%.6f ｜ 累计: total=%d, cost=%.6f",
+                    tool_round + 1, prompt_tokens, completion_tokens, total_tokens,
+                    cache_hit_tokens, cache_miss_tokens, round_cost,
+                    self._total_tokens, self._total_cost,
+                )
+                yield {
+                    "type": "round_usage",
+                    "model": settings.deepseek_flash_model,
+                    "context_length": self._get_context_length(),
+                    "round_prompt_tokens": prompt_tokens,
+                    "round_completion_tokens": completion_tokens,
+                    "round_total_tokens": total_tokens,
+                    "round_cache_hit_tokens": cache_hit_tokens,
+                    "round_cache_miss_tokens": cache_miss_tokens,
+                    "round_cost": round_cost,
+                    "total_prompt_tokens": self._total_prompt_tokens,
+                    "total_completion_tokens": self._total_completion_tokens,
+                    "total_tokens": self._total_tokens,
+                    "total_cache_hit_tokens": self._total_cache_hit_tokens,
+                    "total_cost": self._total_cost,
+                    "api_rounds": self._api_rounds,
+                }
             if assistant_content:
                 logger.debug(
                     "[stream] assistant 文本内容: %s", _truncate(assistant_content, 200),
@@ -165,7 +219,16 @@ class AiClient:
                 "[stream] 达到最大工具调用轮次 (%d)，强制结束", self.MAX_TOOL_ROUNDS,
             )
 
-        yield {"type": "done"}
+        yield {"type": "done", "usage": {
+            "model": settings.deepseek_flash_model,
+            "context_length": self._get_context_length(),
+            "total_prompt_tokens": self._total_prompt_tokens,
+            "total_completion_tokens": self._total_completion_tokens,
+            "total_tokens": self._total_tokens,
+            "total_cache_hit_tokens": self._total_cache_hit_tokens,
+            "total_cost": self._total_cost,
+            "api_rounds": self._api_rounds,
+        }}
 
     def _build_messages(self, user_message: str, history: list[dict]) -> list[dict]:
         """构建发送给 DeepSeek 的消息列表。
@@ -351,6 +414,42 @@ class AiClient:
         if tool_name in self._conversation_overrides:
             return self._conversation_overrides[tool_name]
         return self.effective_permissions.get(tool_name, "ask_user")
+
+    def _calculate_cost(self, prompt_tokens: int, completion_tokens: int,
+                        cache_hit_tokens: int | None = None) -> float:
+        """根据模型和 token 用量计算费用（元）。
+
+        区分 cached / 常规 input tokens，使用 settings 中配置的单价。
+        """
+        # 当前使用的模型
+        model = settings.deepseek_flash_model
+        if model == settings.deepseek_pro_model:
+            input_price = settings.deepseek_pro_input_price
+            output_price = settings.deepseek_pro_output_price
+            cached_input_price = settings.deepseek_pro_cached_input_price
+        else:
+            input_price = settings.deepseek_flash_input_price
+            output_price = settings.deepseek_flash_output_price
+            cached_input_price = settings.deepseek_flash_cached_input_price
+
+        # 计算 input 费用：优先扣除缓存 tokens
+        if cache_hit_tokens and cache_hit_tokens > 0:
+            regular_input = max(0, prompt_tokens - cache_hit_tokens)
+            cost = (
+                regular_input / 1000 * input_price
+                + cache_hit_tokens / 1000 * cached_input_price
+                + completion_tokens / 1000 * output_price
+            )
+        else:
+            cost = prompt_tokens / 1000 * input_price + completion_tokens / 1000 * output_price
+
+        return round(cost, 8)
+
+    def _get_context_length(self) -> int:
+        """返回当前模型的最大上下文长度。"""
+        if settings.deepseek_flash_model == settings.deepseek_pro_model:
+            return settings.deepseek_pro_context_length
+        return settings.deepseek_flash_context_length
 
     async def _execute_tool_calls(self, tool_calls: list[dict]):
         """执行工具调用列表，带权限检查。

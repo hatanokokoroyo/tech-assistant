@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from logging import FileHandler, StreamHandler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from app.api.v1.router import router as api_router
 from app.db.session import engine
 from app.db.base import Base
@@ -90,6 +91,21 @@ logging.getLogger("httpx").propagate = True
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 迁移：为现有表添加 token/cost 字段（幂等，每条 ALTER 独立执行）
+        migration_sqls = [
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER;",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS completion_tokens INTEGER;",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS total_tokens INTEGER;",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION;",
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_prompt_tokens INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_completion_tokens INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_tokens INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_cost DOUBLE PRECISION NOT NULL DEFAULT 0.0;",
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_api_rounds INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_cache_hit_tokens INTEGER NOT NULL DEFAULT 0;",
+        ]
+        for sql in migration_sqls:
+            await conn.execute(text(sql))
     yield
     await engine.dispose()
 

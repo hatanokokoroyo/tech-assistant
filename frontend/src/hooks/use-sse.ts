@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useAuthStore } from "@/stores/auth-store";
+import type { UsageInfo } from "@/api/conversations";
 
 export type StreamEventType =
   | "text"
@@ -26,6 +27,7 @@ interface UseSSEOptions {
   onError?: (error: Error) => void;
   onToolApprovalRequired?: (req: ApprovalRequestEvent) => void;
   onToolDenied?: (event: ToolDeniedEvent) => void;
+  onUsageInfo?: (usage: UsageInfo) => void;
 }
 
 export function useSSE(options: UseSSEOptions) {
@@ -118,6 +120,8 @@ export function useSSE(options: UseSSEOptions) {
                   tool_name: data.tool_name,
                   reason: data.reason || "unknown",
                 });
+              } else if (eventType === "usage_info") {
+                options.onUsageInfo?.(data as unknown as UsageInfo);
               }
             } catch {
               // skip malformed JSON

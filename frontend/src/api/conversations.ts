@@ -4,6 +4,12 @@ export interface Conversation {
   id: number;
   title: string;
   message_count?: number;
+  total_prompt_tokens?: number;
+  total_completion_tokens?: number;
+  total_tokens?: number;
+  total_cost?: number;
+  total_api_rounds?: number;
+  total_cache_hit_tokens?: number;
   created_at: string;
   updated_at?: string;
 }
@@ -15,6 +21,10 @@ export interface Message {
   tool_calls?: ToolCallInfo[] | null;
   tool_call_id?: string | null;
   tool_name?: string | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  cost?: number | null;
   created_at: string;
 }
 
@@ -29,6 +39,23 @@ export interface ToolCallInfo {
 
 export interface ConversationDetail extends Conversation {
   messages: Message[];
+}
+
+export interface UsageInfo {
+  model?: string;
+  context_length?: number;
+  round_prompt_tokens: number;
+  round_completion_tokens: number;
+  round_total_tokens: number;
+  round_cache_hit_tokens: number | null;
+  round_cache_miss_tokens: number | null;
+  round_cost: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  total_cache_hit_tokens: number;
+  total_cost: number;
+  api_rounds: number;
 }
 
 interface PaginatedResponse<T> {

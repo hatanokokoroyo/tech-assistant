@@ -26,6 +26,12 @@ async def list_conversations(db: AsyncSession, user_id: int, project_id: int) ->
             "id": c.id,
             "title": c.title or "新对话",
             "message_count": msg_count,
+            "total_prompt_tokens": c.total_prompt_tokens,
+            "total_completion_tokens": c.total_completion_tokens,
+            "total_tokens": c.total_tokens,
+            "total_cost": c.total_cost,
+            "total_api_rounds": c.total_api_rounds,
+            "total_cache_hit_tokens": c.total_cache_hit_tokens,
             "created_at": _fmt(c.created_at),
             "updated_at": _fmt(c.updated_at),
         })
@@ -70,6 +76,10 @@ async def get_messages(db: AsyncSession, conv_id: int) -> list[dict]:
             "tool_calls": m.tool_calls,
             "tool_call_id": m.tool_call_id,
             "tool_name": m.tool_name,
+            "prompt_tokens": m.prompt_tokens,
+            "completion_tokens": m.completion_tokens,
+            "total_tokens": m.total_tokens,
+            "cost": m.cost,
             "created_at": _fmt(m.created_at),
         }
         for m in messages
@@ -84,8 +94,14 @@ async def save_user_message(db: AsyncSession, conv_id: int, content: str) -> Mes
     return msg
 
 
-async def save_assistant_message(db: AsyncSession, conv_id: int, content: str | None, tool_calls: list | None = None) -> Message:
-    msg = Message(conversation_id=conv_id, role="assistant", content=content, tool_calls=tool_calls)
+async def save_assistant_message(db: AsyncSession, conv_id: int, content: str | None, tool_calls: list | None = None,
+                                 prompt_tokens: int | None = None, completion_tokens: int | None = None,
+                                 total_tokens: int | None = None, cost: float | None = None) -> Message:
+    msg = Message(
+        conversation_id=conv_id, role="assistant", content=content, tool_calls=tool_calls,
+        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+        total_tokens=total_tokens, cost=cost,
+    )
     db.add(msg)
     await db.commit()
     await db.refresh(msg)
@@ -109,6 +125,28 @@ async def save_tool_message(db: AsyncSession, conv_id: int, tool_call_id: str, t
 async def touch_conversation(db: AsyncSession, conv_id: int):
     await db.execute(
         update(Conversation).where(Conversation.id == conv_id).values(updated_at=func.now())
+    )
+    await db.commit()
+
+
+async def update_conversation_usage(
+    db: AsyncSession, conv_id: int,
+    total_prompt_tokens: int, total_completion_tokens: int,
+    total_tokens: int, total_cost: float,
+    total_api_rounds: int = 0,
+    total_cache_hit_tokens: int = 0,
+):
+    """更新对话的累计 token 和费用统计。"""
+    await db.execute(
+        update(Conversation).where(Conversation.id == conv_id).values(
+            total_prompt_tokens=total_prompt_tokens,
+            total_completion_tokens=total_completion_tokens,
+            total_tokens=total_tokens,
+            total_cost=total_cost,
+            total_api_rounds=total_api_rounds,
+            total_cache_hit_tokens=total_cache_hit_tokens,
+            updated_at=func.now(),
+        )
     )
     await db.commit()
 
