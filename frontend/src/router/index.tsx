@@ -11,6 +11,7 @@ import FilePanel from "@/pages/app/file-panel";
 import ChatPanel from "@/pages/app/chat-panel";
 import RepoPanel from "@/pages/app/repo-panel";
 import SettingsPage from "@/pages/settings/settings-page";
+import ProjectSettingsPage from "@/pages/app/project-settings";
 
 function ProtectedRoute() {
   const token = useAuthStore((s) => s.token);
@@ -51,6 +52,7 @@ export const router = createBrowserRouter([
               { path: "chat", element: <ChatPanel /> },
               { path: "chat/:conversationId", element: <ChatPanel /> },
               { path: "repos", element: <RepoPanel /> },
+              { path: "settings", element: <ProjectSettingsPage /> },
             ],
           },
         ],

@@ -127,4 +127,4 @@ async def delete_conversation(db: AsyncSession, conv_id: int):
 def _fmt(dt) -> str:
     if dt is None:
         return ""
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")

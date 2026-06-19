@@ -153,3 +153,23 @@ COMMENT ON COLUMN event_logs.summary           IS '事件处理摘要';
 COMMENT ON COLUMN event_logs.supplement        IS '用户补充说明';
 COMMENT ON COLUMN event_logs.file_path         IS '生成的Markdown文件路径';
 COMMENT ON COLUMN event_logs.deleted_at        IS '逻辑删除时间';
+
+
+-- 8. tool_permission_configs
+CREATE TABLE tool_permission_configs (
+    id              BIGSERIAL       PRIMARY KEY,
+    project_id      BIGINT          NOT NULL REFERENCES custom_projects(id),
+    tool_name       VARCHAR(50)     NOT NULL CHECK (tool_name IN ('run_command', 'read_file', 'write_file', 'search_content', 'list_directory', 'delete_file')),
+    permission      VARCHAR(20)     NOT NULL CHECK (permission IN ('auto_approve', 'ask_user', 'deny')),
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMP
+);
+
+CREATE UNIQUE INDEX idx_tool_permission_configs_project_tool ON tool_permission_configs(project_id, tool_name);
+
+COMMENT ON TABLE  tool_permission_configs              IS '项目级 Tool 权限配置';
+COMMENT ON COLUMN tool_permission_configs.project_id   IS '所属定制项目';
+COMMENT ON COLUMN tool_permission_configs.tool_name    IS 'Tool 名称';
+COMMENT ON COLUMN tool_permission_configs.permission   IS '权限策略: auto_approve/ask_user/deny';
+COMMENT ON COLUMN tool_permission_configs.deleted_at   IS '逻辑删除时间';

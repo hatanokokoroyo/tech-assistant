@@ -3,8 +3,12 @@
 POST /api/conversations/{id}/stream
   → 流式返回 SSE 事件（message_start / token / message_end）
   → 同时将消息持久化到 PostgreSQL
+
+POST /api/conversations/{id}/tool-approval
+  → 提交工具调用审批决定
 """
 
+import asyncio
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,7 +18,10 @@ from app.db.session import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.ai import AiClient
+from app.ai import approval as approval_mgr
+from app.schemas.tool_permission import ToolApprovalRequest
 from app.services import conversation_service as svc
+from app.services import tool_permission_service as perm_svc
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +50,24 @@ async def stream_chat(
 
     # 获取历史消息
     history = await svc.get_messages(db, conversation_id)
-    # 去掉刚保存的用户消息（会在 _build_messages 中单独追加）
-    history = history[:-1]
+    history = history[:-1]  # 去掉刚保存的用户消息
 
-    client = AiClient(user_id=user.id, custom_project_id=conv.custom_project_id)
+    # 解析项目有效权限
+    effective_permissions = await perm_svc.get_effective_permissions(db, conv.custom_project_id)
+
+    client = AiClient(
+        user_id=user.id,
+        custom_project_id=conv.custom_project_id,
+        conversation_id=conversation_id,
+        effective_permissions=effective_permissions,
+    )
 
     async def event_generator():
         yield _sse("message_start", {"conversation_id": conversation_id})
 
-        # 收集 assistant 消息的各部分
         assistant_content_parts: list[str] = []
         assistant_tool_calls: list[dict] = []
-        tool_results: list[dict] = []  # {tool_call_id, name, content}
+        tool_results: list[dict] = []
 
         try:
             async for chunk in client.stream(user_content, history):
@@ -67,7 +80,6 @@ async def stream_chat(
 
                 elif chunk["type"] == "tool_call":
                     tc = chunk["tool_call"]
-                    # 更新或添加
                     found = False
                     for i, existing in enumerate(assistant_tool_calls):
                         if existing["id"] == tc["id"]:
@@ -76,7 +88,6 @@ async def stream_chat(
                             break
                     if not found:
                         assistant_tool_calls.append(tc)
-
                     yield _sse("token", {
                         "type": "tool_call_progress",
                         "tool_call_id": tc["id"],
@@ -96,13 +107,45 @@ async def stream_chat(
                         "content": chunk["content"],
                     })
 
+                elif chunk["type"] == "tool_approval_required":
+                    # 审批请求事件 — 前端弹出审批弹窗
+                    yield _sse("tool_approval_required", {
+                        "tool_call_id": chunk["tool_call_id"],
+                        "tool_name": chunk["name"],
+                        "arguments": chunk["arguments"],
+                    })
+
+                elif chunk["type"] == "tool_denied":
+                    # 工具被拒绝 — 记录并通知前端
+                    denied = {
+                        "tool_call_id": chunk["tool_call_id"],
+                        "name": chunk["name"],
+                        "content": f"权限不足: 工具 {chunk['name']} 已被 {chunk.get('reason', '用户拒绝')}。",
+                    }
+                    tool_results.append(denied)
+                    yield _sse("tool_denied", {
+                        "tool_call_id": chunk["tool_call_id"],
+                        "tool_name": chunk["name"],
+                        "reason": chunk.get("reason", "unknown"),
+                    })
+
                 elif chunk["type"] == "done":
                     pass
 
+        except asyncio.CancelledError:
+            # SSE 连接被客户端断开（正常情况），保存部分消息后结束
+            logger.info("[SSE] 连接断开: conv=%d, user=%d", conversation_id, user.id)
+            try:
+                await _persist_partial(
+                    db, conversation_id,
+                    assistant_content_parts, assistant_tool_calls, tool_results,
+                )
+            except Exception:
+                logger.exception("保存部分消息失败")
+            return
         except Exception as e:
             logger.exception("SSE 流式对话异常: %s", e)
             yield _sse("token", {"type": "text", "content": f"\n\n⚠️ 对话异常中断：{e}"})
-            # 异常时仍保存已收到的部分消息，避免孤立 user 消息
             try:
                 await _persist_partial(
                     db, conversation_id,
@@ -113,8 +156,10 @@ async def stream_chat(
                 yield _sse("token", {"type": "text", "content": "\n\n⚠️ 部分消息保存失败，对话记录可能不完整"})
             yield _sse("message_end", {"done": True})
             return
+        finally:
+            # 清理审批通道
+            approval_mgr.cleanup(conversation_id)
 
-        # 持久化消息
         await _persist_partial(
             db, conversation_id,
             assistant_content_parts, assistant_tool_calls, tool_results,
@@ -130,6 +175,41 @@ async def stream_chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/conversations/{conversation_id}/tool-approval")
+async def submit_tool_approval(
+    conversation_id: int,
+    body: ToolApprovalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """提交工具调用审批决定。
+
+    在 SSE 流进行中，用户看到审批弹窗后，通过此端点提交决定。
+    """
+    conv = await svc.get_conversation(db, conversation_id)
+    if conv is None or conv.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
+
+    success = approval_mgr.approve(
+        conversation_id=conversation_id,
+        tool_call_id=body.tool_call_id,
+        decision=body.decision,
+        scope=body.scope or "once",
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="审批槽位不存在或已超时",
+        )
+
+    return {
+        "code": 0,
+        "message": "ok",
+        "data": {"approved": body.decision == "approved"},
+    }
 
 
 def _sse(event: str, data: dict) -> str:
@@ -148,7 +228,6 @@ async def _persist_partial(
 
     if tool_calls:
         await svc.save_assistant_message(db, conversation_id, content, tool_calls)
-        # 补充缺失的 tool 响应（使用副本，不修改调用方的列表）
         all_results = list(tool_results)
         saved_ids = {tr["tool_call_id"] for tr in all_results}
         for tc in tool_calls:

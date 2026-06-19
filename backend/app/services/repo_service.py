@@ -1,7 +1,7 @@
 import subprocess
 import os
 from pathlib import Path
-from app.utils.path_utils import sandbox_root
+from app.utils.path_utils import sandbox_root, project_root
 
 
 def _ssh_env(user_id: int) -> dict[str, str]:
@@ -14,7 +14,7 @@ def _ssh_env(user_id: int) -> dict[str, str]:
 
 
 def git_clone(user_id: int, project_id: int, repo_url: str, target_dir: str) -> Path:
-    proj_dir = sandbox_root(user_id) / str(project_id)
+    proj_dir = project_root(user_id, project_id)
     target = proj_dir / target_dir
     env = _ssh_env(user_id)
     subprocess.run(
@@ -29,7 +29,7 @@ def git_clone(user_id: int, project_id: int, repo_url: str, target_dir: str) -> 
 
 
 def git_branches(user_id: int, project_id: int, repo_name: str) -> dict:
-    repo_dir = sandbox_root(user_id) / str(project_id) / repo_name
+    repo_dir = project_root(user_id, project_id) / repo_name
     if not repo_dir.exists():
         raise FileNotFoundError(f"仓库目录不存在: {repo_dir}")
 
@@ -54,7 +54,7 @@ def git_branches(user_id: int, project_id: int, repo_name: str) -> dict:
 
 
 def git_checkout(user_id: int, project_id: int, repo_name: str, branch: str):
-    repo_dir = sandbox_root(user_id) / str(project_id) / repo_name
+    repo_dir = project_root(user_id, project_id) / repo_name
     if not repo_dir.exists():
         raise FileNotFoundError(f"仓库目录不存在: {repo_dir}")
 
@@ -69,7 +69,7 @@ def git_checkout(user_id: int, project_id: int, repo_name: str, branch: str):
 
 def git_fetch(user_id: int, project_id: int, repo_name: str):
     """对指定仓库执行 git fetch --all --prune，更新远程分支信息。"""
-    repo_dir = sandbox_root(user_id) / str(project_id) / repo_name
+    repo_dir = project_root(user_id, project_id) / repo_name
     if not repo_dir.exists():
         raise FileNotFoundError(f"仓库目录不存在: {repo_dir}")
 

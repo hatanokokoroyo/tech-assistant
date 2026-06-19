@@ -7,6 +7,7 @@ from app.api.v1.files import router as files_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.stream import router as stream_router
 from app.api.v1.events import router as events_router
+from app.api.v1.tool_permissions import router as tool_permissions_router
 
 router = APIRouter(prefix="/api")
 router.include_router(auth_router)
@@ -17,3 +18,4 @@ router.include_router(files_router)
 router.include_router(conversations_router)
 router.include_router(stream_router)
 router.include_router(events_router)
+router.include_router(tool_permissions_router)

@@ -74,5 +74,5 @@ def user_to_response(user: User) -> UserResponse:
         username=user.username,
         alias_name=user.alias_name,
         role=user.role,
-        created_at=user.created_at.strftime("%Y-%m-%d %H:%M:%S") if user.created_at else "",
+        created_at=user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ") if user.created_at else "",
     )

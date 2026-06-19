@@ -100,8 +100,8 @@ async def delete_repo(
     repo.deleted_at = func_now()
     # 物理删除目录
     import shutil
-    from app.utils.path_utils import sandbox_root
-    repo_dir = sandbox_root(user.id) / str(project_id) / repo.name
+    from app.utils.path_utils import project_root
+    repo_dir = project_root(user.id, project_id) / repo.name
     if repo_dir.exists():
         shutil.rmtree(repo_dir)
     await db.commit()
@@ -201,4 +201,4 @@ def func_now():
 def _fmt(dt) -> str:
     if dt is None:
         return ""
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router";
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -18,7 +18,7 @@ import {
   useDeleteConversation,
   useConversation,
 } from "@/queries/use-conversations";
-import { useSSE, type StreamEventType } from "@/hooks/use-sse";
+import { useSSE, type StreamEventType, type ApprovalRequestEvent, type ToolDeniedEvent } from "@/hooks/use-sse";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import type { Message } from "@/api/conversations";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,9 @@ import { formatDistanceToNow } from "@/lib/format";
 import { useState, useCallback, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ToolApprovalDialog, type ApprovalRequest } from "@/components/app/tool-approval-dialog";
+import { toolPermissionApi } from "@/api/tool-permissions";
+import { toast } from "sonner";
 
 export default function ChatPanel() {
   const { projectId, conversationId } = useParams();
@@ -197,11 +200,21 @@ function ChatListContent({
 
 // ── 右栏对话视图 ──
 function ChatViewContent({ convId }: { convId: number }) {
+  const { projectId } = useParams();
+  const pid = Number(projectId);
+  const navigate = useNavigate();
+
   const { data: conversation, isLoading } = useConversation(convId);
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const streamingRef = useRef({ text: "", reasoning: "" });
   const [, forceRender] = useState(0);
+
+  // 审批状态
+  const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([]);
+  const [showApproval, setShowApproval] = useState(false);
+  const pendingApprovalsRef = useRef<ApprovalRequest[]>([]);
+  const submittedRef = useRef(false);  // 防止 Dialog onOpenChange 触发二次提交
 
   // 同步服务端消息
   useEffect(() => {
@@ -233,11 +246,66 @@ function ChatViewContent({ convId }: { convId: number }) {
         setLocalMessages((prev) => [...prev, newMsg]);
       }
       streamingRef.current = { text: "", reasoning: "" };
+      // 清理审批状态
+      pendingApprovalsRef.current = [];
+      setApprovalRequests([]);
+      setShowApproval(false);
+      submittedRef.current = false;
     }, []),
     onError: useCallback((err: Error) => {
       console.error("SSE error:", err);
     }, []),
+    onToolApprovalRequired: useCallback((req: ApprovalRequestEvent) => {
+      // 新一轮审批：重置防重复提交标记
+      submittedRef.current = false;
+      pendingApprovalsRef.current = [
+        ...pendingApprovalsRef.current,
+        {
+          tool_call_id: req.tool_call_id,
+          tool_name: req.tool_name,
+          arguments: req.arguments,
+        },
+      ];
+      setApprovalRequests([...pendingApprovalsRef.current]);
+      setShowApproval(true);
+    }, []),
+    onToolDenied: useCallback((event: ToolDeniedEvent) => {
+      toast.error(`工具 ${event.tool_name} 被拒绝：${event.reason === "policy_deny" ? "项目策略禁止" : "已拒绝"}`);
+    }, []),
   });
+
+  // 提交审批决定
+  const handleApprovalSubmit = useCallback(
+    async (decisions: { tool_call_id: string; decision: "approved" | "denied"; scope: "once" | "conversation" }[]) => {
+      submittedRef.current = true;
+      setShowApproval(false);
+
+      for (const d of decisions) {
+        try {
+          await toolPermissionApi.approve(convId, {
+            tool_call_id: d.tool_call_id,
+            decision: d.decision,
+            scope: d.scope,
+          });
+        } catch {
+          toast.error(`审批提交失败: ${d.tool_call_id}`);
+        }
+      }
+    },
+    [convId],
+  );
+
+  const handleApprovalCancel = useCallback(() => {
+    // 已通过 handleApprovalSubmit 提交，跳过二次提交
+    if (submittedRef.current) return;
+    // 超时或手动关闭：全部拒绝
+    const decisions = pendingApprovalsRef.current.map((r) => ({
+      tool_call_id: r.tool_call_id,
+      decision: "denied" as const,
+      scope: "once" as const,
+    }));
+    handleApprovalSubmit(decisions);
+  }, [handleApprovalSubmit]);
 
   const handleSend = useCallback(async () => {
     const text = inputValue.trim();
@@ -248,6 +316,8 @@ function ChatViewContent({ convId }: { convId: number }) {
     ]);
     setInputValue("");
     streamingRef.current = { text: "", reasoning: "" };
+    pendingApprovalsRef.current = [];
+    setApprovalRequests([]);
     await send(convId, text);
   }, [inputValue, isStreaming, convId, send]);
 
@@ -260,12 +330,25 @@ function ChatViewContent({ convId }: { convId: number }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+      {/* 工具栏 */}
+      <div className="flex items-center justify-end gap-1 border-b px-3 py-1.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          title="项目权限设置"
+          onClick={() => navigate(`/projects/${pid}/settings`)}
+        >
+          <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </div>
+
       {/* 消息列表 */}
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="flex-1 overflow-y-auto min-h-0 px-4 py-4"
       >
         <div className="mx-auto max-w-3xl space-y-4">
           {localMessages.filter(m => m.role !== "tool").map((msg) => (
@@ -329,6 +412,14 @@ function ChatViewContent({ convId }: { convId: number }) {
           </div>
         </div>
       </div>
+
+      {/* 审批弹窗 */}
+      <ToolApprovalDialog
+        open={showApproval && approvalRequests.length > 0}
+        requests={approvalRequests}
+        onSubmit={handleApprovalSubmit}
+        onCancel={handleApprovalCancel}
+      />
     </div>
   );
 }

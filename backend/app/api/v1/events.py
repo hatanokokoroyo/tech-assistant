@@ -47,4 +47,4 @@ async def list_events(
 def _fmt(dt) -> str:
     if dt is None:
         return ""
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")

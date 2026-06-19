@@ -1,11 +1,11 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from app.utils.path_utils import sandbox_root, allowed_document_path
+from app.utils.path_utils import project_root, allowed_document_path
 
 
 def get_file_tree(user_id: int, project_id: int) -> list[dict]:
-    proj_dir = sandbox_root(user_id) / str(project_id)
+    proj_dir = project_root(user_id, project_id)
 
     def _build_tree(dir_path: Path, rel: str) -> list[dict]:
         nodes = []
@@ -58,7 +58,7 @@ def read_file(user_id: int, project_id: int, file_path: str) -> dict:
         raise FileNotFoundError(f"文件不存在: {file_path}")
     content = target.read_text(encoding="utf-8")
     mtime = target.stat().st_mtime
-    updated_at = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+    updated_at = datetime.fromtimestamp(mtime).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {"path": file_path, "content": content, "updated_at": updated_at}
 
 

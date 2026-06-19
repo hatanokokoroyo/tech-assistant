@@ -14,7 +14,7 @@
 - `backend/app/core/` — 配置（.env）、安全（JWT+bcrypt）、依赖注入（get_current_user）
 - `frontend/src/` — React 19 应用（详见 `doc/前端目录结构.md`）
 - `doc/` — 设计文档 + schema.sql
-- `doc/record/` — 重构记录
+- `doc/record/` — 开发汇总日志（每次重要功能开发完成后生成，命名格式：`yyyy-MM-dd <改动主题>.md`）
 
 ## 常用命令
 ```

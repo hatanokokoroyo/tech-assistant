@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.event_log import EventLog
-from app.utils.path_utils import sandbox_root
+from app.utils.path_utils import project_root
 
 
 async def create_event(
@@ -14,7 +14,7 @@ async def create_event(
     conversation_id: int | None = None,
 ) -> EventLog:
     # 生成 Markdown 文件
-    proj_dir = sandbox_root(user_id) / str(custom_project_id)
+    proj_dir = project_root(user_id, custom_project_id)
     log_dir = proj_dir / "doc" / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -36,7 +36,7 @@ async def create_event(
         conversation_id=conversation_id,
         summary=summary,
         supplement=supplement,
-        file_path=str(filepath.relative_to(sandbox_root(user_id))),
+        file_path=str(filepath.relative_to(project_root(user_id, custom_project_id))),
     )
     db.add(event)
     await db.commit()
@@ -69,4 +69,4 @@ async def list_events(db: AsyncSession, custom_project_id: int) -> list[dict]:
 def _fmt(dt) -> str:
     if dt is None:
         return ""
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")

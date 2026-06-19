@@ -31,6 +31,7 @@ import {
   useDeleteSshKey,
 } from "@/queries/use-ssh-keys";
 import { toast } from "sonner";
+import { formatDateTime } from "@/lib/format";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -102,7 +103,7 @@ function SshKeySection() {
               {sshKey.fingerprint || "指纹未获取（密钥可能格式不标准）"}
             </p>
             <p className="text-xs text-muted-foreground">
-              上传于 {sshKey.created_at}
+              上传于 {formatDateTime(sshKey.created_at)}
             </p>
           </div>
           <Button

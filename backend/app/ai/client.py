@@ -12,14 +12,25 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from app.ai.schemas import TOOLS
 from app.ai import tools as ai_tools
+from app.ai import approval as approval_mgr
 
 logger = logging.getLogger(__name__)
 
 
 class AiClient:
-    def __init__(self, user_id: int, custom_project_id: int):
+    def __init__(
+        self,
+        user_id: int,
+        custom_project_id: int,
+        conversation_id: int,
+        effective_permissions: dict[str, str] | None = None,
+    ):
         self.user_id = user_id
         self.custom_project_id = custom_project_id
+        self.conversation_id = conversation_id
+        self.effective_permissions = effective_permissions or {}
+        # 对话级内存态覆盖（前端审批时设 scope=conversation）
+        self._conversation_overrides: dict[str, str] = {}
         self.client = AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
@@ -37,6 +48,8 @@ class AiClient:
           {"type": "reasoning", "content": "..."}       — 思维链
           {"type": "tool_call", "tool_call": {...}}     — 工具调用（累积中）
           {"type": "tool_result", "tool_call_id": "...", "name": "...", "content": "..."}
+          {"type": "tool_approval_required", "tool_call_id": "...", "name": "...", "arguments": {...}}
+          {"type": "tool_denied", "tool_call_id": "...", "name": "...", "reason": "..."}
           {"type": "done"}                               — 流结束
 
         返回最终消息列表（含 assistant 消息 + tool 消息），调用方写入 DB。
@@ -127,33 +140,23 @@ class AiClient:
                 "tool_calls": assistant_tool_calls,
             })
 
-            for tc in assistant_tool_calls:
-                func_name = tc["function"]["name"]
-                try:
-                    args = json.loads(tc["function"]["arguments"])
-                except json.JSONDecodeError:
-                    args = {}
-
-                logger.info(
-                    "[stream] ⚙ 执行工具: name=%s, args=%s",
-                    func_name, _truncate(json.dumps(args, ensure_ascii=False), 200),
-                )
-                try:
-                    result = self._execute_tool(func_name, args)
-                except Exception as e:
-                    logger.error("工具执行异常（未被 _execute_tool 捕获）: %s", e)
-                    result = f"Error: 工具执行异常 — {type(e).__name__}: {e}"
-
-                logger.info(
-                    "[stream] ✓ 工具结果: name=%s, result=%s",
-                    func_name, _truncate(result, 200),
-                )
-                yield {"type": "tool_result", "tool_call_id": tc["id"], "name": func_name, "content": result}
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result,
-                })
+            async for result_chunk in self._execute_tool_calls(assistant_tool_calls):
+                if result_chunk["type"] == "tool_result":
+                    yield result_chunk
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": result_chunk["tool_call_id"],
+                        "content": result_chunk["content"],
+                    })
+                elif result_chunk["type"] == "tool_denied":
+                    yield result_chunk
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": result_chunk["tool_call_id"],
+                        "content": f"权限不足: 工具 {result_chunk['name']} 已被 {result_chunk.get('reason', '用户拒绝')}。",
+                    })
+                else:
+                    yield result_chunk
 
             logger.debug("[stream] 第 %d 轮工具执行完毕，进入下一轮", tool_round + 1)
         else:
@@ -302,38 +305,181 @@ class AiClient:
         try:
             if name == "run_command":
                 return ai_tools.run_command(
-                    self.user_id,
+                    self.user_id, self.custom_project_id,
                     args.get("command", ""),
                     args.get("work_dir"),
                     args.get("timeout_seconds", 30),
                 )
             elif name == "read_file":
                 return ai_tools.read_file(
-                    self.user_id, args.get("file_path", ""),
+                    self.user_id, self.custom_project_id,
+                    args.get("file_path", ""),
                     args.get("head"), args.get("tail"),
                 )
             elif name == "write_file":
                 return ai_tools.write_file(
-                    self.user_id,
+                    self.user_id, self.custom_project_id,
                     args.get("file_path", ""), args.get("content", ""),
                 )
             elif name == "search_content":
                 return ai_tools.search_content(
-                    self.user_id, args.get("pattern", ""),
+                    self.user_id, self.custom_project_id,
+                    args.get("pattern", ""),
                     args.get("path"), args.get("glob"),
                     args.get("case_sensitive", False),
                     args.get("context", 2),
                 )
             elif name == "list_directory":
-                return ai_tools.list_directory(self.user_id, args.get("path", ""))
+                return ai_tools.list_directory(
+                    self.user_id, self.custom_project_id,
+                    args.get("path", ""),
+                )
             elif name == "delete_file":
-                return ai_tools.delete_file(self.user_id, args.get("file_path", ""))
+                return ai_tools.delete_file(
+                    self.user_id, self.custom_project_id,
+                    args.get("file_path", ""),
+                )
             else:
                 return f"Error: 未知工具 {name}"
         except PermissionError as e:
             return f"Error: 路径越界 — {e}"
         except Exception as e:
             return f"Error: {type(e).__name__} — {e}"
+
+    def _resolve_permission(self, tool_name: str) -> str:
+        """解析工具的最终权限：对话覆盖 > 项目配置 > 全局默认。"""
+        if tool_name in self._conversation_overrides:
+            return self._conversation_overrides[tool_name]
+        return self.effective_permissions.get(tool_name, "ask_user")
+
+    async def _execute_tool_calls(self, tool_calls: list[dict]):
+        """执行工具调用列表，带权限检查。
+
+        对于 auto_approve 的工具：直接执行，yield tool_result。
+        对于 ask_user 的工具：yield tool_approval_required，等待用户审批。
+        对于 deny 的工具：yield tool_denied，不执行。
+
+        批量审批：收集所有 ask_user 的工具，统一发出审批请求后等待。
+        """
+        # 分类工具调用
+        auto_tasks: list[dict] = []
+        pending_approvals: list[dict] = []
+        denied_tasks: list[dict] = []
+
+        for tc in tool_calls:
+            func_name = tc["function"]["name"]
+            perm = self._resolve_permission(func_name)
+
+            if perm == "deny":
+                denied_tasks.append(tc)
+            elif perm == "ask_user":
+                pending_approvals.append(tc)
+            else:  # auto_approve
+                auto_tasks.append(tc)
+
+        # 1. 先 yield 被拒绝的工具
+        for tc in denied_tasks:
+            func_name = tc["function"]["name"]
+            logger.info("[stream] 🚫 禁止执行: name=%s", func_name)
+            yield {
+                "type": "tool_denied",
+                "tool_call_id": tc["id"],
+                "name": func_name,
+                "reason": "policy_deny",
+            }
+
+        # 2. 自动执行：无需等待
+        for tc in auto_tasks:
+            func_name = tc["function"]["name"]
+            try:
+                args = json.loads(tc["function"]["arguments"])
+            except json.JSONDecodeError:
+                args = {}
+
+            logger.info("[stream] ⚙ 自动执行: name=%s", func_name)
+            result = self._run_tool(func_name, args)
+            yield {
+                "type": "tool_result",
+                "tool_call_id": tc["id"],
+                "name": func_name,
+                "content": result,
+            }
+
+        # 3. 需要审批的工具：发出审批请求并等待
+        if pending_approvals:
+            batch_slots = []
+            for tc in pending_approvals:
+                func_name = tc["function"]["name"]
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
+
+                slot = approval_mgr.ApprovalSlot(
+                    tool_call_id=tc["id"],
+                    tool_name=func_name,
+                    arguments=args,
+                )
+                approval_mgr.register(self.conversation_id, slot)
+                batch_slots.append(slot)
+
+                yield {
+                    "type": "tool_approval_required",
+                    "tool_call_id": tc["id"],
+                    "name": func_name,
+                    "arguments": args,
+                }
+
+            # 等待所有审批结果
+            for slot in batch_slots:
+                decision, scope = await approval_mgr.wait_for_approval(
+                    self.conversation_id, slot.tool_call_id,
+                )
+
+                if scope == "conversation" and decision == "approved":
+                    # 对话级覆盖：后续同类型工具自动通过
+                    self._conversation_overrides[slot.tool_name] = "auto_approve"
+                    logger.info(
+                        "[stream] 📝 对话级覆盖: tool=%s → auto_approve",
+                        slot.tool_name,
+                    )
+
+                if decision == "approved":
+                    logger.info(
+                        "[stream] ✅ 审批通过: name=%s", slot.tool_name,
+                    )
+                    result = self._run_tool(slot.tool_name, slot.arguments)
+                    yield {
+                        "type": "tool_result",
+                        "tool_call_id": slot.tool_call_id,
+                        "name": slot.tool_name,
+                        "content": result,
+                    }
+                else:
+                    logger.info(
+                        "[stream] ❌ 审批拒绝: name=%s", slot.tool_name,
+                    )
+                    yield {
+                        "type": "tool_denied",
+                        "tool_call_id": slot.tool_call_id,
+                        "name": slot.tool_name,
+                        "reason": "user_denied",
+                    }
+
+    def _run_tool(self, name: str, args: dict) -> str:
+        """执行单个工具并返回结果字符串（无权限检查）。"""
+        logger.info(
+            "[stream] ⚙ 执行工具: name=%s, args=%s",
+            name, _truncate(json.dumps(args, ensure_ascii=False), 200),
+        )
+        try:
+            result = self._execute_tool(name, args)
+        except Exception as e:
+            logger.error("工具执行异常: %s", e)
+            result = f"Error: 工具执行异常 — {type(e).__name__}: {e}"
+
+        logger.info("[stream] ✓ 工具结果: name=%s, result=%s", name, _truncate(result, 200))
+        return result
 
 
 def _truncate(text: str, max_len: int = 200) -> str:

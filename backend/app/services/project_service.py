@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.models.custom_project import CustomProject
 from app.models.code_repo import CodeRepo
-from app.utils.path_utils import sandbox_root
+from app.utils.path_utils import project_root
 
 
 async def list_projects(db: AsyncSession, user_id: int) -> list[dict]:
@@ -42,7 +42,7 @@ async def create_project(db: AsyncSession, user_id: int, name: str, description:
     await db.refresh(project)
 
     # 创建目录结构
-    proj_dir = sandbox_root(user_id) / str(project.id)
+    proj_dir = project_root(user_id, project.id)
     os.makedirs(proj_dir / "doc" / "log", exist_ok=True)
     os.makedirs(proj_dir / "doc" / "reference-doc", exist_ok=True)
     (proj_dir / "instructions.md").write_text(f"# {name}\n\n## 项目简介\n\n", encoding="utf-8")
@@ -77,7 +77,7 @@ async def delete_project(db: AsyncSession, project_id: int, user_id: int):
     # 逻辑删除 DB 记录
     project.deleted_at = func.now()
     # 物理删除目录
-    proj_dir = sandbox_root(user_id) / str(project_id)
+    proj_dir = project_root(user_id, project_id)
     if proj_dir.exists():
         import shutil
         shutil.rmtree(proj_dir)
@@ -98,4 +98,4 @@ async def delete_project(db: AsyncSession, project_id: int, user_id: int):
 def _fmt(dt) -> str:
     if dt is None:
         return ""
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
