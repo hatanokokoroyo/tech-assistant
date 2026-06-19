@@ -4,14 +4,25 @@ import type { UsageInfo } from "@/api/conversations";
 
 export type StreamEventType =
   | "text"
-  | "reasoning"
-  | "tool_call_progress"
-  | "tool_result";
+  | "reasoning";
 
 export interface ApprovalRequestEvent {
   tool_call_id: string;
   tool_name: string;
   arguments: Record<string, unknown>;
+}
+
+export interface ToolCallEvent {
+  tool_call_id: string;
+  tool_name: string;
+  arguments: string;
+}
+
+export interface ToolResultEvent {
+  tool_call_id: string;
+  tool_name: string;
+  content: string;
+  is_error?: boolean;
 }
 
 export interface ToolDeniedEvent {
@@ -23,9 +34,11 @@ export interface ToolDeniedEvent {
 interface UseSSEOptions {
   onToken?: (type: StreamEventType, content: string) => void;
   onMessageStart?: () => void;
-  onMessageEnd?: () => void;
+  onMessageEnd?: (aborted?: boolean) => void;
   onError?: (error: Error) => void;
   onToolApprovalRequired?: (req: ApprovalRequestEvent) => void;
+  onToolCall?: (event: ToolCallEvent) => void;
+  onToolResult?: (event: ToolResultEvent) => void;
   onToolDenied?: (event: ToolDeniedEvent) => void;
   onUsageInfo?: (usage: UsageInfo) => void;
 }
@@ -114,6 +127,19 @@ export function useSSE(options: UseSSEOptions) {
                   tool_name: data.tool_name,
                   arguments: data.arguments || {},
                 });
+              } else if (eventType === "tool_call") {
+                options.onToolCall?.({
+                  tool_call_id: data.tool_call_id,
+                  tool_name: data.tool_name,
+                  arguments: data.arguments || "",
+                });
+              } else if (eventType === "tool_result") {
+                options.onToolResult?.({
+                  tool_call_id: data.tool_call_id,
+                  tool_name: data.tool_name,
+                  content: data.content || "",
+                  is_error: data.is_error || false,
+                });
               } else if (eventType === "tool_denied") {
                 options.onToolDenied?.({
                   tool_call_id: data.tool_call_id,
@@ -131,6 +157,9 @@ export function useSSE(options: UseSSEOptions) {
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           options.onError?.(err as Error);
+        } else {
+          // abort 时也触发 onMessageEnd(true) 让调用方能保存部分内容
+          options.onMessageEnd?.(true);
         }
       } finally {
         setIsStreaming(false);

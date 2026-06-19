@@ -18,7 +18,7 @@ import {
   useDeleteConversation,
   useConversation,
 } from "@/queries/use-conversations";
-import { useSSE, type StreamEventType, type ApprovalRequestEvent, type ToolDeniedEvent } from "@/hooks/use-sse";
+import { useSSE, type StreamEventType, type ApprovalRequestEvent, type ToolCallEvent, type ToolResultEvent, type ToolDeniedEvent } from "@/hooks/use-sse";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import type { Message, UsageInfo } from "@/api/conversations";
 import { cn } from "@/lib/utils";
@@ -207,7 +207,14 @@ function ChatViewContent({ convId }: { convId: number }) {
   const { data: conversation, isLoading } = useConversation(convId);
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
-  const streamingRef = useRef({ text: "", reasoning: "" });
+  // 流式状态
+  const streamingRef = useRef({
+    text: "",
+    reasoning: "",
+    toolCalls: [] as Array<{ tool_call_id: string; tool_name: string; arguments: string }>,
+    toolResults: [] as Array<{ tool_call_id: string; tool_name: string; content: string; is_error?: boolean }>,
+  });
+  const [activeToolCalls, setActiveToolCalls] = useState<Array<{ tool_call_id: string; tool_name: string; arguments: string }>>([]);
   const [, forceRender] = useState(0);
 
   // 审批状态
@@ -226,7 +233,8 @@ function ChatViewContent({ convId }: { convId: number }) {
     setUsageInfo(null);
     setLocalMessages([]);
     setInputValue("");
-    streamingRef.current = { text: "", reasoning: "" };
+    streamingRef.current = { text: "", reasoning: "", toolCalls: [], toolResults: [] };
+    setActiveToolCalls([]);
     hasReceivedLiveUsage.current = false;
   }, [convId]);
 
@@ -274,18 +282,50 @@ function ChatViewContent({ convId }: { convId: number }) {
       else if (type === "reasoning") streamingRef.current.reasoning += content;
       forceRender((n) => n + 1);
     }, []),
-    onMessageEnd: useCallback(() => {
+    onToolCall: useCallback((event: ToolCallEvent) => {
+      // tool_call 来自流式 delta，同一 tool_call_id 可能收到多次增量更新
+      const idx = streamingRef.current.toolCalls.findIndex(
+        (tc) => tc.tool_call_id === event.tool_call_id,
+      );
+      if (idx >= 0) {
+        streamingRef.current.toolCalls[idx] = event;
+      } else {
+        streamingRef.current.toolCalls.push(event);
+      }
+      setActiveToolCalls([...streamingRef.current.toolCalls]);
+      forceRender((n) => n + 1);
+    }, []),
+    onToolResult: useCallback((event: ToolResultEvent) => {
+      streamingRef.current.toolResults.push(event);
+      // 从活跃列表中移除
+      setActiveToolCalls((prev) =>
+        prev.filter((tc) => tc.tool_call_id !== event.tool_call_id),
+      );
+      forceRender((n) => n + 1);
+    }, []),
+    onMessageEnd: useCallback((aborted?: boolean) => {
       const sc = streamingRef.current;
-      if (sc.text) {
+      if (sc.text || sc.toolCalls.length > 0 || aborted) {
+        // 构造 tool_calls 列表（用于已保存 assistant 消息的展示）
+        const toolCallsForMsg = sc.toolCalls.map((tc) => ({
+          id: tc.tool_call_id,
+          type: "function",
+          function: {
+            name: tc.tool_name,
+            arguments: tc.arguments || "",
+          },
+        }));
         const newMsg: Message = {
           id: Date.now(),
           role: "assistant",
-          content: sc.text,
+          content: sc.text || null,
+          tool_calls: toolCallsForMsg.length > 0 ? toolCallsForMsg : null,
           created_at: new Date().toISOString(),
         };
         setLocalMessages((prev) => [...prev, newMsg]);
       }
-      streamingRef.current = { text: "", reasoning: "" };
+      streamingRef.current = { text: "", reasoning: "", toolCalls: [], toolResults: [] };
+      setActiveToolCalls([]);
       // 清理审批状态
       pendingApprovalsRef.current = [];
       setApprovalRequests([]);
@@ -359,7 +399,8 @@ function ChatViewContent({ convId }: { convId: number }) {
       { id: Date.now(), role: "user", content: text, created_at: new Date().toISOString() },
     ]);
     setInputValue("");
-    streamingRef.current = { text: "", reasoning: "" };
+    streamingRef.current = { text: "", reasoning: "", toolCalls: [], toolResults: [] };
+    setActiveToolCalls([]);
     pendingApprovalsRef.current = [];
     setApprovalRequests([]);
     // 不清空 usageInfo：保留累计统计，等待新一轮 SSE 覆盖
@@ -411,7 +452,7 @@ function ChatViewContent({ convId }: { convId: number }) {
             {localMessages.filter(m => m.role !== "tool").map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
-            {isStreaming && streamingRef.current.text && (
+            {isStreaming && (streamingRef.current.text || streamingRef.current.reasoning || activeToolCalls.length > 0) && (
               <div className="flex gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
                   🤖
@@ -424,8 +465,34 @@ function ChatViewContent({ convId }: { convId: number }) {
                       </p>
                     </CollapsibleBlock>
                   )}
-                  <MarkdownContent content={streamingRef.current.text} />
-                  <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground" />
+                  {/* 文本内容（如有） */}
+                  {streamingRef.current.text && (
+                    <>
+                      <MarkdownContent content={streamingRef.current.text} />
+                      <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground" />
+                    </>
+                  )}
+                  {/* 工具调用指示（与文本并列展示） */}
+                  {activeToolCalls.length > 0 && (
+                    <div className="space-y-1.5 border-t pt-2">
+                      {activeToolCalls.map((tc) => (
+                        <div
+                          key={tc.tool_call_id}
+                          className="flex items-center gap-2 text-sm text-muted-foreground"
+                        >
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          <span>🔧 正在运行 <code className="rounded bg-muted-foreground/10 px-1 font-mono text-xs">{tc.tool_name}</code></span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* 无文本也无工具时显示思考中 */}
+                  {!streamingRef.current.text && activeToolCalls.length === 0 && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      <span>⏳ AI 正在思考...</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -100,10 +100,10 @@ async def stream_chat(
                             break
                     if not found:
                         assistant_tool_calls.append(tc)
-                    yield _sse("token", {
-                        "type": "tool_call_progress",
+                    yield _sse("tool_call", {
                         "tool_call_id": tc["id"],
                         "tool_name": tc["function"]["name"],
+                        "arguments": tc["function"]["arguments"],
                     })
 
                 elif chunk["type"] == "tool_result":
@@ -112,11 +112,11 @@ async def stream_chat(
                         "name": chunk["name"],
                         "content": chunk["content"],
                     })
-                    yield _sse("token", {
-                        "type": "tool_result",
+                    yield _sse("tool_result", {
                         "tool_call_id": chunk["tool_call_id"],
                         "tool_name": chunk["name"],
                         "content": chunk["content"],
+                        "is_error": chunk.get("is_error", False),
                     })
 
                 elif chunk["type"] == "tool_approval_required":

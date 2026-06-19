@@ -44,7 +44,7 @@ class AiClient:
         self._api_rounds = 0
 
     # agentic loop 最大轮次，防止无限循环
-    MAX_TOOL_ROUNDS: int = 5
+    MAX_TOOL_ROUNDS: int = 100
 
     async def stream(self, user_message: str, history: list[dict]):
         """
