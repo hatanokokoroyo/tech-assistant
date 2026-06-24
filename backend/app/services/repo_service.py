@@ -15,7 +15,8 @@ def _ssh_env(user_id: int) -> dict[str, str]:
 
 def git_clone(user_id: int, project_id: int, repo_url: str, target_dir: str) -> Path:
     proj_dir = project_root(user_id, project_id)
-    target = proj_dir / target_dir
+    target = proj_dir / "code_projects" / target_dir
+    target.parent.mkdir(parents=True, exist_ok=True)
     env = _ssh_env(user_id)
     subprocess.run(
         ["git", "clone", repo_url, str(target)],
@@ -29,7 +30,7 @@ def git_clone(user_id: int, project_id: int, repo_url: str, target_dir: str) -> 
 
 
 def git_branches(user_id: int, project_id: int, repo_name: str) -> dict:
-    repo_dir = project_root(user_id, project_id) / repo_name
+    repo_dir = project_root(user_id, project_id) / "code_projects" / repo_name
     if not repo_dir.exists():
         raise FileNotFoundError(f"仓库目录不存在: {repo_dir}")
 
@@ -54,7 +55,7 @@ def git_branches(user_id: int, project_id: int, repo_name: str) -> dict:
 
 
 def git_checkout(user_id: int, project_id: int, repo_name: str, branch: str):
-    repo_dir = project_root(user_id, project_id) / repo_name
+    repo_dir = project_root(user_id, project_id) / "code_projects" / repo_name
     if not repo_dir.exists():
         raise FileNotFoundError(f"仓库目录不存在: {repo_dir}")
 
@@ -69,7 +70,7 @@ def git_checkout(user_id: int, project_id: int, repo_name: str, branch: str):
 
 def git_fetch(user_id: int, project_id: int, repo_name: str):
     """对指定仓库执行 git fetch --all --prune，更新远程分支信息。"""
-    repo_dir = project_root(user_id, project_id) / repo_name
+    repo_dir = project_root(user_id, project_id) / "code_projects" / repo_name
     if not repo_dir.exists():
         raise FileNotFoundError(f"仓库目录不存在: {repo_dir}")
 

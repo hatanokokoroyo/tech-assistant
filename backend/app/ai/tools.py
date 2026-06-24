@@ -96,9 +96,10 @@ def search_content(
     case_sensitive: bool = False,
     context: int = 2,
 ) -> str:
-    base = project_root(user_id, project_id)
     if path:
         base = _resolve(user_id, project_id, path)
+    else:
+        base = project_root(user_id, project_id)
 
     flags = "" if case_sensitive else "-i"
     grep_cmd = ["grep", "-rn", flags]

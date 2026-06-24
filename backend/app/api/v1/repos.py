@@ -65,7 +65,7 @@ async def add_repo(
         custom_project_id=project_id,
         name=body.name,
         url=body.url,
-        local_path=str(project_id) + "/" + body.name,
+        local_path=f"code_projects/{project_id}/{body.name}",
         current_branch="main",
     )
     db.add(repo)
