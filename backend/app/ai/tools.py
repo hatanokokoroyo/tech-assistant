@@ -1,11 +1,11 @@
 """Tool Calls 执行器 — 在沙箱 /data/tech-assistant/<user_id>/<project_id>/ 内运行。
 
-所有路径操作都经过 path_utils.safe_resolve 校验，限定在对话所属项目目录内，防止 AI 逃逸。
+所有路径操作都经过 path_utils 校验，限定在对话所属项目目录内，防止 AI 逃逸。写入/删除操作限制在 instructions.md 和 doc/ 目录内。
 """
 
 import subprocess
 from pathlib import Path
-from app.utils.path_utils import safe_resolve, project_root
+from app.utils.path_utils import safe_resolve, allowed_document_path, project_root
 
 
 def _resolve(user_id: int, project_id: int, file_path: str) -> Path:
@@ -81,7 +81,7 @@ def write_file(
     file_path: str,
     content: str,
 ) -> str:
-    target = _resolve(user_id, project_id, file_path)
+    target = allowed_document_path(user_id, project_id, file_path.lstrip("/"))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"OK: 已写入 {file_path} ({len(content)} 字节)"
@@ -143,7 +143,7 @@ def list_directory(user_id: int, project_id: int, path: str) -> str:
 
 
 def delete_file(user_id: int, project_id: int, file_path: str) -> str:
-    target = _resolve(user_id, project_id, file_path)
+    target = allowed_document_path(user_id, project_id, file_path.lstrip("/"))
     if not target.exists():
         return f"Error: 文件不存在：{file_path}"
     if target.is_dir():

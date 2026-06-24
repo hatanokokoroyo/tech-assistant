@@ -37,7 +37,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "创建或覆盖沙箱内的文件。父目录不存在时自动创建。",
+            "description": "在 doc/ 目录或 instructions.md 中创建或覆盖文件。仅允许操作 doc/ 和 instructions.md，其他位置会被拒绝。父目录不存在时自动创建。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -84,7 +84,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "delete_file",
-            "description": "删除沙箱内的指定文件。",
+            "description": "删除 doc/ 或 instructions.md 中的指定文件。仅允许操作 doc/ 和 instructions.md。",
             "parameters": {
                 "type": "object",
                 "properties": {
