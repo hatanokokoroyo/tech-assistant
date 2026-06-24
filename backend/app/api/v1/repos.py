@@ -101,7 +101,7 @@ async def delete_repo(
     # 物理删除目录
     import shutil
     from app.utils.path_utils import project_root
-    repo_dir = project_root(user.id, project_id) / repo.name
+    repo_dir = project_root(user.id, project_id) / "code_projects" / repo.name
     if repo_dir.exists():
         shutil.rmtree(repo_dir)
     await db.commit()
