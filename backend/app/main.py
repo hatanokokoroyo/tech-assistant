@@ -103,6 +103,14 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_cost DOUBLE PRECISION NOT NULL DEFAULT 0.0;",
             "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_api_rounds INTEGER NOT NULL DEFAULT 0;",
             "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS total_cache_hit_tokens INTEGER NOT NULL DEFAULT 0;",
+            # 更新 tool_permission_configs 的 CHECK 约束，新增 4 个数据库工具
+            "DO $$ BEGIN "
+            "  ALTER TABLE tool_permission_configs DROP CONSTRAINT IF EXISTS ck_tool_permission_configs_tool_name; "
+            "EXCEPTION WHEN undefined_object THEN NULL; END $$;",
+            "ALTER TABLE tool_permission_configs ADD CONSTRAINT ck_tool_permission_configs_tool_name "
+            "CHECK (tool_name IN ('run_command', 'read_file', 'write_file', "
+            "'search_content', 'list_directory', 'delete_file', "
+            "'list_datasources', 'query_mysql', 'query_redis', 'query_tdengine'));",
         ]
         for sql in migration_sqls:
             await conn.execute(text(sql))

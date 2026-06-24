@@ -12,6 +12,10 @@ GLOBAL_DEFAULTS: dict[str, str] = {
     "write_file": "ask_user",
     "run_command": "ask_user",
     "delete_file": "ask_user",
+    "list_datasources": "auto_approve",   # 仅列出名称，风险低
+    "query_mysql": "ask_user",            # 查询需用户确认
+    "query_redis": "ask_user",
+    "query_tdengine": "ask_user",
 }
 
 ALL_TOOLS = list(GLOBAL_DEFAULTS.keys())

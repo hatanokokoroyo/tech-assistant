@@ -72,6 +72,9 @@ async def stream_chat(
         effective_permissions=effective_permissions,
     )
 
+    # 初始化 MCP 客户端（连接数据库查询服务，失败时降级不阻塞）
+    await client._init_mcp()
+
     async def event_generator():
         yield _sse("message_start", {"conversation_id": conversation_id})
 

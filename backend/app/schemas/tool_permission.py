@@ -8,6 +8,10 @@ ALLOWED_TOOLS = [
     "search_content",
     "list_directory",
     "delete_file",
+    "list_datasources",
+    "query_mysql",
+    "query_redis",
+    "query_tdengine",
 ]
 
 ALLOWED_PERMISSIONS = ["auto_approve", "ask_user", "deny"]
@@ -16,7 +20,7 @@ ALLOWED_PERMISSIONS = ["auto_approve", "ask_user", "deny"]
 class ToolPermissionItem(BaseModel):
     tool_name: str = Field(
         ...,
-        pattern="^(run_command|read_file|write_file|search_content|list_directory|delete_file)$",
+        pattern="^(run_command|read_file|write_file|search_content|list_directory|delete_file|list_datasources|query_mysql|query_redis|query_tdengine)$",
     )
     permission: str = Field(
         ...,

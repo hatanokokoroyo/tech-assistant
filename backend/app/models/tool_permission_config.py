@@ -23,7 +23,8 @@ class ToolPermissionConfig(Base):
         ),
         CheckConstraint(
             "tool_name IN ('run_command', 'read_file', 'write_file', "
-            "'search_content', 'list_directory', 'delete_file')",
+            "'search_content', 'list_directory', 'delete_file', "
+            "'list_datasources', 'query_mysql', 'query_redis', 'query_tdengine')",
             name="ck_tool_permission_configs_tool_name",
         ),
     )

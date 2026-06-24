@@ -10,7 +10,7 @@ import json
 import logging
 from openai import AsyncOpenAI
 from app.core.config import settings
-from app.ai.schemas import TOOLS
+from app.ai.schemas import TOOLS, MCP_TOOL_NAMES
 from app.ai import tools as ai_tools
 from app.ai import approval as approval_mgr
 
@@ -31,6 +31,12 @@ class AiClient:
         self.effective_permissions = effective_permissions or {}
         # 对话级内存态覆盖（前端审批时设 scope=conversation）
         self._conversation_overrides: dict[str, str] = {}
+        # MCP 客户端状态
+        self._mcp_tools: list[dict] = []
+        self._mcp_session = None
+        self._mcp_session_ctx = None
+        self._mcp_transport_ctx = None
+        self._mcp_initialized = False
         self.client = AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
@@ -75,7 +81,7 @@ class AiClient:
             stream = await self.client.chat.completions.create(
                 model=settings.deepseek_flash_model,
                 messages=messages,
-                tools=TOOLS,
+                tools=self._get_tools(),
                 stream=True,
                 timeout=120,
             )
@@ -246,6 +252,13 @@ class AiClient:
             "你有工具可以读取文件、搜索代码、执行命令。"
             "请逐步推理，先理解问题，再使用工具收集信息，最后给出分析结论。"
             "回复使用中文。"
+            "\n\n"
+            "该项目可能配置了数据库数据源。你可以：\n"
+            "- 使用 list_datasources 查看可用的数据库及其类型（MySQL/Redis/TDengine）\n"
+            "- 使用 query_mysql / query_redis / query_tdengine 对指定数据源执行只读查询\n"
+            "- 查询时指定数据源名称（而非 ID），数据库类型由系统自动处理\n"
+            "- 注意：仅允许 SELECT 类只读查询，每次最多返回 1000 行，查询超时 30 秒\n"
+            "- 查询前请先用 list_datasources 了解有哪些数据源可用"
         )
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -415,6 +428,100 @@ class AiClient:
             return self._conversation_overrides[tool_name]
         return self.effective_permissions.get(tool_name, "ask_user")
 
+    # ── MCP 客户端集成 ────────────────────────────────
+
+    async def _init_mcp(self):
+        """连接 MCP Server，获取工具列表，转为 OpenAI function calling schema。
+
+        初始化失败时降级：记录 WARNING 日志，_mcp_tools 保持为空。
+        保持 MCP 连接上下文存活供后续工具调用使用。
+        """
+        if self._mcp_initialized:
+            return
+
+        try:
+            from mcp.client.streamable_http import streamablehttp_client
+            from mcp import ClientSession
+
+            mcp_url = settings.db_query_mcp_url
+            logger.info("[MCP] 正在连接 MCP Server: %s", mcp_url)
+
+            # streamablehttp_client 是 async context manager，需要保持其生命周期
+            self._mcp_transport_ctx = streamablehttp_client(mcp_url)
+            read, write, _ = await self._mcp_transport_ctx.__aenter__()
+
+            self._mcp_session_ctx = ClientSession(read, write)
+            self._mcp_session = await self._mcp_session_ctx.__aenter__()
+            await self._mcp_session.initialize()
+
+            mcp_tools_result = await self._mcp_session.list_tools()
+            self._mcp_tools = [self._mcp_to_openai_tool(t) for t in mcp_tools_result.tools]
+            logger.info("[MCP] 成功获取 %d 个 MCP 工具: %s",
+                        len(self._mcp_tools),
+                        [t["function"]["name"] for t in self._mcp_tools])
+        except Exception as e:
+            logger.warning("[MCP] MCP Server 不可用，数据库查询工具不可用: %s", e)
+            self._mcp_tools = []
+            self._mcp_session = None
+        finally:
+            self._mcp_initialized = True
+
+    def _get_tools(self) -> list[dict]:
+        """返回完整工具列表：本地工具 + MCP 数据库工具。"""
+        return TOOLS + self._mcp_tools
+
+    def _mcp_to_openai_tool(self, mcp_tool) -> dict:
+        """将 MCP Tool 定义转为 OpenAI function calling schema，移除 project_id 参数。"""
+        schema = mcp_tool.inputSchema if hasattr(mcp_tool, 'inputSchema') else {}
+
+        # 从 properties 中移除 project_id（Agent 不应感知）
+        props = dict(schema.get("properties", {}))
+        props.pop("project_id", None)
+
+        # 从 required 中移除 project_id
+        required = list(schema.get("required", []))
+        if "project_id" in required:
+            required.remove("project_id")
+
+        return {
+            "type": "function",
+            "function": {
+                "name": mcp_tool.name,
+                "description": mcp_tool.description or "",
+                "parameters": {
+                    "type": "object",
+                    "properties": props,
+                    "required": required,
+                },
+            },
+        }
+
+    async def _run_mcp_tool(self, name: str, args: dict) -> str:
+        """异步调用 MCP 工具。"""
+        if self._mcp_session is None:
+            return json.dumps({"error": "MCP Server 未连接"})
+
+        try:
+            result = await self._mcp_session.call_tool(name, args)
+            # 提取结果内容
+            if hasattr(result, 'content') and result.content:
+                # content 可能是 list[TextContent] 等
+                parts = []
+                for item in result.content:
+                    if hasattr(item, 'text'):
+                        parts.append(item.text)
+                    elif hasattr(item, 'data'):
+                        parts.append(str(item.data))
+                    else:
+                        parts.append(str(item))
+                return "\n".join(parts)
+            return str(result)
+        except Exception as e:
+            logger.error("[MCP] 工具调用失败: name=%s, error=%s", name, e)
+            return json.dumps({"error": f"MCP 工具调用失败: {type(e).__name__}: {e}"})
+
+    # ── 费用计算 ───────────────────────────────────────
+
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int,
                         cache_hit_tokens: int | None = None) -> float:
         """根据模型和 token 用量计算费用（元）。
@@ -496,7 +603,7 @@ class AiClient:
                 args = {}
 
             logger.info("[stream] ⚙ 自动执行: name=%s", func_name)
-            result = self._run_tool(func_name, args)
+            result = await self._run_tool_async(func_name, args)
             yield {
                 "type": "tool_result",
                 "tool_call_id": tc["id"],
@@ -547,7 +654,7 @@ class AiClient:
                     logger.info(
                         "[stream] ✅ 审批通过: name=%s", slot.tool_name,
                     )
-                    result = self._run_tool(slot.tool_name, slot.arguments)
+                    result = await self._run_tool_async(slot.tool_name, slot.arguments)
                     yield {
                         "type": "tool_result",
                         "tool_call_id": slot.tool_call_id,
@@ -565,14 +672,39 @@ class AiClient:
                         "reason": "user_denied",
                     }
 
-    def _run_tool(self, name: str, args: dict) -> str:
-        """执行单个工具并返回结果字符串（无权限检查）。"""
+    async def _run_tool_async(self, name: str, args: dict) -> str:
+        """执行单个工具（异步版本），MCP 工具走异步路径。"""
+        import time as time_mod
+
         logger.info(
             "[stream] ⚙ 执行工具: name=%s, args=%s",
             name, _truncate(json.dumps(args, ensure_ascii=False), 200),
         )
+        t_start = time_mod.time()
+
         try:
-            result = self._execute_tool(name, args)
+            if name in MCP_TOOL_NAMES:
+                args["project_id"] = self.custom_project_id
+                result = await self._run_mcp_tool(name, args)
+
+                # 审计日志：记录数据库查询
+                elapsed_ms = int((time_mod.time() - t_start) * 1000)
+                try:
+                    result_obj = json.loads(result)
+                    is_error = "error" in result_obj
+                except (json.JSONDecodeError, TypeError):
+                    is_error = False
+
+                logger.info(
+                    "[audit] DB查询: user=%d, project=%d, tool=%s, ds=%s, "
+                    "elapsed=%dms, error=%s, result_preview=%s",
+                    self.user_id, self.custom_project_id, name,
+                    args.get("datasource_name", "?"),
+                    elapsed_ms, is_error,
+                    _truncate(result, 200),
+                )
+            else:
+                result = self._execute_tool(name, args)
         except Exception as e:
             logger.error("工具执行异常: %s", e)
             result = f"Error: 工具执行异常 — {type(e).__name__}: {e}"

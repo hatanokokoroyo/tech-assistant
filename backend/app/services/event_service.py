@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.event_log import EventLog
@@ -42,6 +41,43 @@ async def create_event(
     await db.commit()
     await db.refresh(event)
     return event
+
+
+async def log_db_query(
+    db: AsyncSession,
+    user_id: int,
+    project_id: int,
+    datasource_name: str,
+    db_type: str,
+    query: str,
+    row_count: int | None,
+    duration_ms: int,
+    success: bool,
+    error_message: str | None = None,
+    conversation_id: int | None = None,
+) -> EventLog:
+    """记录数据库查询审计日志。"""
+    status = "✅ 成功" if success else "❌ 失败"
+    summary = f"DB查询 [{db_type}] {datasource_name}: {status} (耗时 {duration_ms}ms)"
+
+    supplement_parts = [
+        f"**数据源**：{datasource_name} ({db_type})",
+        f"**查询语句**：\n```\n{query}\n```",
+        f"**耗时**：{duration_ms}ms",
+    ]
+    if success:
+        supplement_parts.append(f"**返回行数**：{row_count or 0}")
+    if error_message:
+        supplement_parts.append(f"**错误信息**：{error_message}")
+
+    return await create_event(
+        db,
+        custom_project_id=project_id,
+        user_id=user_id,
+        summary=summary,
+        supplement="\n\n".join(supplement_parts),
+        conversation_id=conversation_id,
+    )
 
 
 async def list_events(db: AsyncSession, custom_project_id: int) -> list[dict]:

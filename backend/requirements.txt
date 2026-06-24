@@ -9,3 +9,8 @@ python-jose[cryptography]==3.3.*
 openai==1.*
 python-multipart==0.0.*
 sse-starlette==2.*
+cryptography>=42.0.0
+mcp>=1.0.0
+aiomysql>=0.2.0
+redis>=5.0.0
+taos-ws-py>=0.3.0

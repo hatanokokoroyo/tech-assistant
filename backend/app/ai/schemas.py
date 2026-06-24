@@ -95,3 +95,11 @@ TOOLS = [
         },
     },
 ]
+
+# MCP 数据库查询工具名称集合（用于判断工具是否为 MCP 工具）
+MCP_TOOL_NAMES = {
+    "list_datasources",
+    "query_mysql",
+    "query_redis",
+    "query_tdengine",
+}
