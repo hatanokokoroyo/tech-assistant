@@ -1,36 +1,13 @@
-import { useNavigate, useParams } from "react-router";
+import { useNavigate } from "react-router";
 import { File, RefreshCw, FolderOpen, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import PanelLayout from "@/components/shared/panel-layout";
 import { useFileTree } from "@/queries/use-files";
 import type { FileTreeNode } from "@/api/files";
 import { useFileEditor } from "./file-editor-hook";
 import { cn } from "@/lib/utils";
 import { useState, useCallback } from "react";
-
-export default function FilePanel() {
-  const { projectId, "*": filePath } = useParams();
-  const pid = Number(projectId);
-  const decodedPath = filePath ? decodeURIComponent(filePath) : "";
-
-  return (
-    <PanelLayout
-      activeTab="files"
-      middleHeader={
-        <FilePanelHeader pid={pid} />
-      }
-      middleContent={
-        <FileTreeContent pid={pid} selectedPath={decodedPath} />
-      }
-      rightContent={
-        <FileEditorContent pid={pid} filePath={decodedPath} />
-      }
-    />
-  );
-}
-
 // ── 中栏标题 ──
-function FilePanelHeader({ pid }: { pid: number }) {
+export function FilePanelHeader({ pid }: { pid: number }) {
   return (
     <div className="flex items-center justify-between border-b px-3 py-2">
       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -56,7 +33,7 @@ function RefreshButton({ pid }: { pid: number }) {
 }
 
 // ── 中栏文件树 ──
-function FileTreeContent({
+export function FileTreeContent({
   pid,
   selectedPath,
 }: {
@@ -168,7 +145,7 @@ function FileTreeNodeComponent({
 }
 
 // ── 右栏文件编辑器 ──
-function FileEditorContent({
+export function FileEditorContent({
   pid,
   filePath,
 }: {

@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useParams } from "react-router";
 import { ChevronDown, GitBranch, Plus, Trash2, RefreshCw, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +29,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import PanelLayout from "@/components/shared/panel-layout";
 import {
   useRepos,
   useCreateRepo,
@@ -41,28 +39,7 @@ import {
 } from "@/queries/use-repos";
 import { toast } from "sonner";
 
-export default function RepoPanel() {
-  const { projectId } = useParams();
-  const pid = Number(projectId);
-
-  return (
-    <PanelLayout
-      activeTab="repos"
-      middleHeader={<RepoPanelHeader pid={pid} />}
-      middleContent={<RepoListContent pid={pid} />}
-      rightContent={
-        <div className="flex flex-1 items-center justify-center text-muted-foreground">
-          <div className="space-y-2 text-center">
-            <GitBranch className="mx-auto h-10 w-10 opacity-30" />
-            <p className="text-sm">选择仓库查看详情</p>
-          </div>
-        </div>
-      }
-    />
-  );
-}
-
-function RepoPanelHeader({ pid }: { pid: number }) {
+export function RepoPanelHeader({ pid }: { pid: number }) {
   const fetchAll = useFetchAllRepos(pid);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
@@ -169,7 +146,7 @@ function RepoPanelHeader({ pid }: { pid: number }) {
   );
 }
 
-function RepoListContent({ pid }: { pid: number }) {
+export function RepoListContent({ pid }: { pid: number }) {
   const { data: repos, isLoading } = useRepos(pid);
   const deleteRepo = useDeleteRepo(pid);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);

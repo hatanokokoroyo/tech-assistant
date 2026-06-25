@@ -7,9 +7,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import LoginPage from "@/pages/login/login-page";
 import RegisterPage from "@/pages/register/register-page";
 import AppLayout, { ProjectPlaceholder } from "@/pages/app/layout";
-import FilePanel from "@/pages/app/file-panel";
-import ChatPanel from "@/pages/app/chat-panel";
-import RepoPanel from "@/pages/app/repo-panel";
+import ProjectDetail from "@/pages/app/project-detail";
 import SettingsPage from "@/pages/settings/settings-page";
 import ProjectSettingsPage from "@/pages/app/project-settings";
 
@@ -47,12 +45,8 @@ export const router = createBrowserRouter([
             path: "projects/:projectId",
             children: [
               { index: true, element: <Navigate to="files" replace /> },
-              { path: "files", element: <FilePanel /> },
-              { path: "files/*", element: <FilePanel /> },
-              { path: "chat", element: <ChatPanel /> },
-              { path: "chat/:conversationId", element: <ChatPanel /> },
-              { path: "repos", element: <RepoPanel /> },
               { path: "settings", element: <ProjectSettingsPage /> },
+              { path: "*", element: <ProjectDetail /> },
             ],
           },
         ],

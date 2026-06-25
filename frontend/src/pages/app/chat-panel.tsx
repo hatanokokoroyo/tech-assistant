@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "react-router";
+import { useNavigate } from "react-router";
 import { MessageSquare, Plus, Trash2, Shield, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import PanelLayout from "@/components/shared/panel-layout";
 import {
   useConversations,
   useCreateConversation,
@@ -29,39 +28,8 @@ import { ToolApprovalDialog, type ApprovalRequest } from "@/components/app/tool-
 import UsagePanel from "@/components/chat/usage-panel";
 import { toolPermissionApi } from "@/api/tool-permissions";
 import { toast } from "sonner";
-
-export default function ChatPanel() {
-  const { projectId, conversationId } = useParams();
-  const pid = Number(projectId);
-  const convId = conversationId ? Number(conversationId) : null;
-
-  return (
-    <PanelLayout
-      activeTab="chat"
-      middleHeader={
-        <ChatPanelHeader pid={pid} />
-      }
-      middleContent={
-        <ChatListContent pid={pid} currentConvId={convId} />
-      }
-      rightContent={
-        convId ? (
-          <ChatViewContent convId={convId} />
-        ) : (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground">
-            <div className="space-y-2 text-center">
-              <MessageSquare className="mx-auto h-10 w-10 opacity-30" />
-              <p className="text-sm">选择或创建一个对话</p>
-            </div>
-          </div>
-        )
-      }
-    />
-  );
-}
-
 // ── 中栏标题 + 新建按钮 ──
-function ChatPanelHeader({ pid }: { pid: number }) {
+export function ChatPanelHeader({ pid }: { pid: number }) {
   const navigate = useNavigate();
   const createConversation = useCreateConversation(pid);
 
@@ -93,7 +61,7 @@ function ChatPanelHeader({ pid }: { pid: number }) {
 }
 
 // ── 中栏会话列表 ──
-function ChatListContent({
+export function ChatListContent({
   pid,
   currentConvId,
 }: {
@@ -199,9 +167,7 @@ function ChatListContent({
 }
 
 // ── 右栏对话视图 ──
-function ChatViewContent({ convId }: { convId: number }) {
-  const { projectId } = useParams();
-  const pid = Number(projectId);
+export function ChatViewContent({ convId, pid }: { convId: number; pid: number }) {
   const navigate = useNavigate();
 
   const { data: conversation, isLoading } = useConversation(convId);
