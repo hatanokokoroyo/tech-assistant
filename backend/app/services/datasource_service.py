@@ -75,6 +75,8 @@ async def list_datasources(
             "db_type": c.db_type,
             "host": c.host,
             "port": c.port,
+            "database_name": c.database_name,
+            "username": c.username,
             "created_at": _fmt(c.created_at),
         }
         for c in configs

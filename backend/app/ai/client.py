@@ -6,8 +6,10 @@ Usage:
         yield chunk
 """
 
+import asyncio
 import json
 import logging
+from pathlib import Path
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.ai.schemas import TOOLS, MCP_TOOL_NAMES
@@ -15,6 +17,19 @@ from app.ai import tools as ai_tools
 from app.ai import approval as approval_mgr
 
 logger = logging.getLogger(__name__)
+
+
+# ── 系统提示词模板 ──────────────────────────────────
+_SYSTEM_PROMPT_TEMPLATE: str | None = None
+
+
+def _load_system_prompt_template() -> str:
+    """从文件加载系统提示词模板（单例缓存）。"""
+    global _SYSTEM_PROMPT_TEMPLATE
+    if _SYSTEM_PROMPT_TEMPLATE is None:
+        template_path = Path(__file__).parent / "system_prompt.md"
+        _SYSTEM_PROMPT_TEMPLATE = template_path.read_text(encoding="utf-8")
+    return _SYSTEM_PROMPT_TEMPLATE
 
 
 class AiClient:
@@ -200,6 +215,9 @@ class AiClient:
                 "tool_calls": assistant_tool_calls,
             })
 
+            # 追踪 MCP 工具失败次数，用于降级提示
+            mcp_failures: dict[str, int] = getattr(self, "_mcp_failure_counts", {})
+
             async for result_chunk in self._execute_tool_calls(assistant_tool_calls):
                 if result_chunk["type"] == "tool_result":
                     yield result_chunk
@@ -208,6 +226,15 @@ class AiClient:
                         "tool_call_id": result_chunk["tool_call_id"],
                         "content": result_chunk["content"],
                     })
+                    # 检测 MCP 工具失败并累计
+                    tool_name = result_chunk.get("name", "")
+                    content = result_chunk.get("content", "")
+                    if tool_name in MCP_TOOL_NAMES and ("未连接" in content or "不可用" in content or "Error" in content):
+                        mcp_failures[tool_name] = mcp_failures.get(tool_name, 0) + 1
+                    elif tool_name in MCP_TOOL_NAMES:
+                        # 成功则重置计数
+                        mcp_failures.pop(tool_name, None)
+
                 elif result_chunk["type"] == "tool_denied":
                     yield result_chunk
                     messages.append({
@@ -217,6 +244,21 @@ class AiClient:
                     })
                 else:
                     yield result_chunk
+
+            self._mcp_failure_counts = mcp_failures
+
+            # 如果任何 MCP 工具连续失败 2 次，注入系统降级提示
+            degraded_tools = [name for name, count in mcp_failures.items() if count >= 2]
+            if degraded_tools:
+                names_str = "、".join(f"`{n}`" for n in degraded_tools)
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        f"注意：{names_str} 工具当前不可用，请不要再尝试调用这些工具。"
+                        "改为通过搜索代码仓库中的配置文件（如 application.yml）来获取相关信息。"
+                    ),
+                })
+                logger.info("[stream] 注入 MCP 降级提示: %s", degraded_tools)
 
             logger.debug("[stream] 第 %d 轮工具执行完毕，进入下一轮", tool_round + 1)
         else:
@@ -236,6 +278,62 @@ class AiClient:
             "api_rounds": self._api_rounds,
         }}
 
+    def _build_system_prompt(self) -> str:
+        """从模板文件构建系统提示词，动态注入项目信息和 MCP 状态。"""
+        template = _load_system_prompt_template()
+
+        # MCP 工具列表：根据实际连接状态动态生成
+        mcp_tool_names = [t["function"]["name"] for t in self._mcp_tools]
+        if mcp_tool_names:
+            mcp_tools_section = (
+                "### MCP 数据库查询工具\n"
+                "以下工具通过 MCP Server 提供，需要数据库查询时使用：\n\n"
+                "| 工具 | 用途 |\n"
+                "|------|------|\n"
+            )
+            mcp_tool_descriptions = {
+                "list_datasources": "查看可用的数据库及其类型",
+                "query_mysql": "对 MySQL 数据源执行只读 SQL 查询",
+                "query_redis": "对 Redis 数据源执行只读命令",
+                "query_tdengine": "对 TDengine 数据源执行只读 SQL 查询",
+            }
+            for name in mcp_tool_names:
+                desc = mcp_tool_descriptions.get(name, "数据库查询工具")
+                mcp_tools_section += f"| `{name}` | {desc} |\n"
+            mcp_tools_section += (
+                "\n- 查询时指定数据源名称（而非 ID），数据库类型由系统自动处理\n"
+                "- 仅允许 SELECT 类只读查询，每次最多返回 1000 行，查询超时 30 秒\n"
+                "- 查询前请先用 list_datasources 了解有哪些数据源可用\n"
+            )
+        else:
+            mcp_tools_section = (
+                "### MCP 数据库查询工具\n"
+                "当前数据库查询服务不可用。如需查询数据库信息，请通过搜索代码仓库中的配置文件"
+                "（如 `application.yml`、`application-*.yml`）间接获取数据库连接信息。\n"
+            )
+
+        # 数据源查询章节
+        if mcp_tool_names:
+            datasource_section = (
+                "当前已启用数据库查询功能。可用工具：\n"
+                + "\n".join(f"- `{name}`" for name in mcp_tool_names)
+                + "\n\n查询前请先用 list_datasources 了解有哪些数据源可用。"
+            )
+        else:
+            datasource_section = (
+                "当前数据库查询服务未连接，无法直接查询数据源。\n"
+                "如需了解数据库信息，请通过以下方式间接获取：\n"
+                "1. 搜索代码仓库中的 `application.yml` 等配置文件\n"
+                "2. 查看 `doc/` 目录下的相关文档\n"
+                "3. 使用 `search_content` 搜索数据库连接字符串"
+            )
+
+        return template.format(
+            project_id=self.custom_project_id,
+            mcp_tools_section=mcp_tools_section,
+            datasource_section=datasource_section,
+        )
+
     def _build_messages(self, user_message: str, history: list[dict]) -> list[dict]:
         """构建发送给 DeepSeek 的消息列表。
 
@@ -245,36 +343,7 @@ class AiClient:
         当检测到消息链断裂（assistant 的 tool_calls 缺少对应 tool 响应）时，
         丢弃不完整的 assistant 消息，确保传给 API 的消息链始终完整。
         """
-        system_prompt = (
-            "你是一个技术助手，协助研发人员分析和解决技术问题。"
-            f"你当前工作在一个定制项目中（ID={self.custom_project_id}），"
-            f"可以访问该项目下的代码仓库和文档。"
-            "你有工具可以读取文件、搜索代码、执行命令。"
-            "请逐步推理，先理解问题，再使用工具收集信息，最后给出分析结论。"
-            "回复使用中文。"
-            "\n\n"
-            "## 项目目录结构\n"
-            "项目沙箱目录包含：\n"
-            "- `instructions.md` — 项目说明文件（可读写）\n"
-            "- `doc/` — 文档目录，包含子目录如 `reference-doc/` 等（可读写）\n"
-            "- 其他目录（如克隆的代码仓库）— 只读，不可创建或修改文件\n"
-            "\n"
-            "## 文件操作规则\n"
-            "⚠️ 重要限制：你只能在以下位置创建或修改文件：\n"
-            "1. `instructions.md`（项目根目录）\n"
-            "2. `doc/` 目录下的任何子目录和文件\n"
-            "\n"
-            "禁止在项目根目录或其他目录下创建文件。写入非允许位置会被系统拒绝。\n"
-            "使用 `write_file` 和 `delete_file` 时，请使用相对路径（如 `doc/reference-doc/xxx.md`）。\n"
-            "\n"
-            "## 数据源查询\n"
-            "该项目可能配置了数据库数据源。你可以：\n"
-            "- 使用 list_datasources 查看可用的数据库及其类型（MySQL/Redis/TDengine）\n"
-            "- 使用 query_mysql / query_redis / query_tdengine 对指定数据源执行只读查询\n"
-            "- 查询时指定数据源名称（而非 ID），数据库类型由系统自动处理\n"
-            "- 注意：仅允许 SELECT 类只读查询，每次最多返回 1000 行，查询超时 30 秒\n"
-            "- 查询前请先用 list_datasources 了解有哪些数据源可用"
-        )
+        system_prompt = self._build_system_prompt()
         messages = [{"role": "system", "content": system_prompt}]
 
         # 包含历史消息（最近 20 轮）
@@ -450,11 +519,14 @@ class AiClient:
 
         初始化失败时降级：记录 WARNING 日志，_mcp_tools 保持为空。
         保持 MCP 连接上下文存活供后续工具调用使用。
+        总超时 5 秒，避免阻塞首次响应。
         """
         if self._mcp_initialized:
             return
 
-        try:
+        MCP_TIMEOUT_SECONDS = 5
+
+        async def _do_init():
             from mcp.client.streamable_http import streamablehttp_client
             from mcp import ClientSession
 
@@ -474,6 +546,13 @@ class AiClient:
             logger.info("[MCP] 成功获取 %d 个 MCP 工具: %s",
                         len(self._mcp_tools),
                         [t["function"]["name"] for t in self._mcp_tools])
+
+        try:
+            await asyncio.wait_for(_do_init(), timeout=MCP_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("[MCP] 连接超时（%d 秒），数据库查询工具不可用", MCP_TIMEOUT_SECONDS)
+            self._mcp_tools = []
+            self._mcp_session = None
         except Exception as e:
             logger.warning("[MCP] MCP Server 不可用，数据库查询工具不可用: %s", e)
             self._mcp_tools = []

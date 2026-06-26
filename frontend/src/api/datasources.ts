@@ -6,6 +6,8 @@ export interface DatasourceListItem {
   db_type: "mysql" | "redis" | "tdengine";
   host: string;
   port: number;
+  database_name: string | null;
+  username: string | null;
   created_at: string;
 }
 

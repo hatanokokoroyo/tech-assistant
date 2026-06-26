@@ -263,8 +263,8 @@ function DatasourceSection({ projectId }: { projectId: number }) {
     setFormType(ds.db_type);
     setFormHost(ds.host);
     setFormPort(String(ds.port));
-    setFormDb("");
-    setFormUser("");
+    setFormDb(ds.database_name ?? "");
+    setFormUser(ds.username ?? "");
     setFormPassword("");
     setEditingDs(ds);
     setDialogOpen(true);

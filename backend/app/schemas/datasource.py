@@ -32,6 +32,8 @@ class DatasourceListItem(BaseModel):
     db_type: str
     host: str
     port: int
+    database_name: str | None = None
+    username: str | None = None
     created_at: str
 
 

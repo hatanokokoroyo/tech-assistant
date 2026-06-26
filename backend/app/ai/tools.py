@@ -21,7 +21,7 @@ def run_command(
     timeout_seconds: int | None = 30,
 ) -> str:
     # 命令白名单检查（禁止危险操作）
-    dangerous = ["rm -rf /", "sudo", "su ", "mkfs", "dd if=", ":(){ :|:& };:", "/dev/"]
+    dangerous = ["rm -rf /", "sudo", "su ", "mkfs", "dd if=", ":(){ :|:& };:"]
     cmd_lower = command.lower()
     for d in dangerous:
         if d in cmd_lower:

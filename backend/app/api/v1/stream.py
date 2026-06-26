@@ -77,6 +77,8 @@ async def stream_chat(
 
     async def event_generator():
         yield _sse("message_start", {"conversation_id": conversation_id})
+        # 立即发送进度事件，让用户知道系统正在处理（避免 MCP 初始化期间无反馈）
+        yield _sse("progress", {"status": "initializing", "message": "正在准备..."})
 
         assistant_content_parts: list[str] = []
         assistant_tool_calls: list[dict] = []
