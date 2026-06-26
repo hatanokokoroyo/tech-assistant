@@ -17,18 +17,28 @@ import {
   useDeleteConversation,
   useConversation,
 } from "@/queries/use-conversations";
-import { useSSE, type StreamEventType, type ApprovalRequestEvent, type ToolCallEvent, type ToolResultEvent, type ToolDeniedEvent } from "@/hooks/use-sse";
+import {
+  useSSE,
+  type StreamEventType,
+  type ApprovalRequestEvent,
+  type ToolCallEvent,
+  type ToolResultEvent,
+  type ToolDeniedEvent,
+} from "@/hooks/use-sse";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import type { Message, StreamingEvent, UsageInfo } from "@/api/conversations";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/format";
 import { useState, useCallback, useRef, useEffect } from "react";
 import MarkdownContent from "@/components/chat/markdown-content";
-import { ToolApprovalDialog, type ApprovalRequest } from "@/components/app/tool-approval-dialog";
+import {
+  ToolApprovalDialog,
+  type ApprovalRequest,
+} from "@/components/app/tool-approval-dialog";
 import UsagePanel from "@/components/chat/usage-panel";
 import { toolPermissionApi } from "@/api/tool-permissions";
 import { toast } from "sonner";
-// ── 中栏标题 + 新建按钮 ──
+
 export function ChatPanelHeader({ pid }: { pid: number }) {
   const navigate = useNavigate();
   const createConversation = useCreateConversation(pid);
@@ -43,24 +53,29 @@ export function ChatPanelHeader({ pid }: { pid: number }) {
   };
 
   return (
-    <div className="flex items-center justify-between border-b px-3 py-2">
-      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        对话
-      </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-6 w-6"
-        onClick={handleCreate}
-        disabled={createConversation.isPending}
-      >
-        <Plus className="h-3.5 w-3.5" />
-      </Button>
+    <div className="border-b border-border/70 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 rounded-[14px] border border-border/70 bg-panel px-3 py-3 shadow-sm">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">
+            Conversations
+          </p>
+          <h2 className="mt-1 text-sm font-semibold text-foreground">对话历史</h2>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="gap-1.5"
+          onClick={handleCreate}
+          disabled={createConversation.isPending}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          新建
+        </Button>
+      </div>
     </div>
   );
 }
 
-// ── 中栏会话列表 ──
 export function ChatListContent({
   pid,
   currentConvId,
@@ -88,9 +103,9 @@ export function ChatListContent({
 
   if (isLoading) {
     return (
-      <div className="space-y-1 p-2">
+      <div className="space-y-2 p-3">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-14 animate-pulse rounded-md bg-muted" />
+          <div key={i} className="h-[76px] animate-pulse rounded-[16px] bg-panel" />
         ))}
       </div>
     );
@@ -98,46 +113,78 @@ export function ChatListContent({
 
   if (!conversations?.length) {
     return (
-      <div className="flex flex-col items-center py-12 text-center">
-        <MessageSquare className="mb-2 h-8 w-8 text-muted-foreground/30" />
-        <p className="text-xs text-muted-foreground">还没有对话</p>
+      <div className="px-4 py-10">
+        <div className="rounded-[18px] border border-dashed border-border/80 bg-panel px-5 py-8 text-center shadow-sm">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[16px] bg-primary-soft text-primary">
+            <MessageSquare className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-medium text-foreground">还没有对话</p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            新建一个会话，开始与 AI 协作处理文件、仓库和开发任务。
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <>
-      <div className="space-y-0.5 p-1">
-        {conversations.map((conv) => (
-          <div
-            key={conv.id}
-            className={cn(
-              "group flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 transition-colors hover:bg-accent",
-              currentConvId === conv.id && "bg-accent",
-            )}
-            onClick={() => navigate(`/projects/${pid}/chat/${conv.id}`)}
-          >
-            <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{conv.title || "新对话"}</p>
-              <p className="text-xs text-muted-foreground">
-                {conv.message_count ?? 0} 条消息
-                {conv.updated_at && ` · ${formatDistanceToNow(new Date(conv.updated_at))}`}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                setDeleteTarget(conv.id);
-              }}
+      <div className="space-y-2 p-3">
+        {conversations.map((conv) => {
+          const active = currentConvId === conv.id;
+          return (
+            <div
+              key={conv.id}
+              className={cn(
+                "group relative cursor-pointer rounded-[16px] border px-3 py-3 transition-all",
+                active
+                  ? "border-primary/30 bg-panel-elevated shadow-sm ring-1 ring-primary/10"
+                  : "border-transparent bg-transparent hover:border-border/80 hover:bg-panel/80",
+              )}
+              onClick={() => navigate(`/projects/${pid}/chat/${conv.id}`)}
             >
-              <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-            </Button>
-          </div>
-        ))}
+              <span
+                className={cn(
+                  "absolute inset-y-3 left-0 w-0.5 rounded-full bg-primary transition-opacity",
+                  active ? "opacity-100" : "opacity-0 group-hover:opacity-60",
+                )}
+              />
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px]",
+                    active ? "bg-primary-soft text-primary" : "bg-panel text-muted-foreground",
+                  )}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {conv.title || "新对话"}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 rounded-[10px] opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(conv.id);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {conv.message_count ?? 0} 条消息
+                    {conv.updated_at &&
+                      ` · ${formatDistanceToNow(new Date(conv.updated_at))}`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <AlertDialog
@@ -166,32 +213,27 @@ export function ChatListContent({
   );
 }
 
-// ── 右栏对话视图 ──
 export function ChatViewContent({ convId, pid }: { convId: number; pid: number }) {
   const navigate = useNavigate();
 
   const { data: conversation, isLoading } = useConversation(convId);
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
-  // 流式状态 — 用统一的 events 列表保持时间顺序
   const streamingRef = useRef({
     events: [] as StreamingEvent[],
     reasoning: "",
   });
   const [, forceRender] = useState(0);
 
-  // 审批状态
   const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([]);
   const [showApproval, setShowApproval] = useState(false);
   const pendingApprovalsRef = useRef<ApprovalRequest[]>([]);
-  const submittedRef = useRef(false);  // 防止 Dialog onOpenChange 触发二次提交
+  const submittedRef = useRef(false);
 
-  // 用量面板
   const [showUsage, setShowUsage] = useState(true);
   const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
   const hasReceivedLiveUsage = useRef(false);
 
-  // 切换对话时重置用量状态
   useEffect(() => {
     setUsageInfo(null);
     setLocalMessages([]);
@@ -200,21 +242,23 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
     hasReceivedLiveUsage.current = false;
   }, [convId]);
 
-  // 同步服务端消息
   useEffect(() => {
     if (conversation?.messages) {
       setLocalMessages(conversation.messages);
     }
   }, [conversation]);
 
-  // 从历史数据恢复用量统计（仅在从未收到 SSE 推送时执行）
   useEffect(() => {
-    if (conversation && conversation.total_tokens && conversation.total_tokens > 0
-        && !hasReceivedLiveUsage.current && usageInfo === null) {
-      // 找到最新的 assistant 消息，提取其 token 数据作为"上一轮"参考
+    if (
+      conversation &&
+      conversation.total_tokens &&
+      conversation.total_tokens > 0 &&
+      !hasReceivedLiveUsage.current &&
+      usageInfo === null
+    ) {
       const lastAssistant = [...(conversation.messages || [])]
         .reverse()
-        .find(m => m.role === 'assistant' && m.total_tokens);
+        .find((m) => m.role === "assistant" && m.total_tokens);
       setUsageInfo({
         round_prompt_tokens: lastAssistant?.prompt_tokens || 0,
         round_completion_tokens: lastAssistant?.completion_tokens || 0,
@@ -248,8 +292,6 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
       forceRender((n) => n + 1);
     }, []),
     onToolCall: useCallback((event: ToolCallEvent) => {
-      // tool_call 来自流式 delta，同一 tool_call_id 可能收到多次增量更新
-      // 合并到最后一个同 id 的 tool_call 事件，或追加新事件
       const evts = streamingRef.current.events;
       const idx = evts.findIndex(
         (e) => e.type === "tool_call" && e.tool_call_id === event.tool_call_id,
@@ -259,7 +301,6 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
       } else {
         evts.push({ type: "tool_call", ...event });
       }
-      // 同步 activeToolCalls（用于实时显示旋转指示器）
       forceRender((n) => n + 1);
     }, []),
     onToolResult: useCallback((event: ToolResultEvent) => {
@@ -270,7 +311,6 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
       const sc = streamingRef.current;
       const hasEvents = sc.events.length > 0 || aborted;
       if (hasEvents) {
-        // 从事件列表中提取 content 和 tool_calls（兼容后端 Message 结构）
         const textParts: string[] = [];
         const toolCallsForMsg: Message["tool_calls"] = [];
         for (const ev of sc.events) {
@@ -294,7 +334,6 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
         setLocalMessages((prev) => [...prev, newMsg]);
       }
       streamingRef.current = { events: [], reasoning: "" };
-      // 清理审批状态
       pendingApprovalsRef.current = [];
       setApprovalRequests([]);
       setShowApproval(false);
@@ -304,7 +343,6 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
       console.error("SSE error:", err);
     }, []),
     onToolApprovalRequired: useCallback((req: ApprovalRequestEvent) => {
-      // 如果上一批审批已提交（submittedRef=true），说明是新一轮审批，清空旧的
       if (submittedRef.current) {
         pendingApprovalsRef.current = [];
       }
@@ -321,7 +359,9 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
       setShowApproval(true);
     }, []),
     onToolDenied: useCallback((event: ToolDeniedEvent) => {
-      toast.error(`工具 ${event.tool_name} 被拒绝：${event.reason === "policy_deny" ? "项目策略禁止" : "已拒绝"}`);
+      toast.error(
+        `工具 ${event.tool_name} 被拒绝：${event.reason === "policy_deny" ? "项目策略禁止" : "已拒绝"}`,
+      );
     }, []),
     onUsageInfo: useCallback((usage: UsageInfo) => {
       hasReceivedLiveUsage.current = true;
@@ -329,9 +369,14 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
     }, []),
   });
 
-  // 提交审批决定
   const handleApprovalSubmit = useCallback(
-    async (decisions: { tool_call_id: string; decision: "approved" | "denied"; scope: "once" | "conversation" }[]) => {
+    async (
+      decisions: {
+        tool_call_id: string;
+        decision: "approved" | "denied";
+        scope: "once" | "conversation";
+      }[],
+    ) => {
       submittedRef.current = true;
       setShowApproval(false);
 
@@ -351,9 +396,7 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
   );
 
   const handleApprovalCancel = useCallback(() => {
-    // 已通过 handleApprovalSubmit 提交，跳过二次提交
     if (submittedRef.current) return;
-    // 超时或手动关闭：全部拒绝
     const decisions = pendingApprovalsRef.current.map((r) => ({
       tool_call_id: r.tool_call_id,
       decision: "denied" as const,
@@ -367,93 +410,113 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
     if (!text || isStreaming) return;
     setLocalMessages((prev) => [
       ...prev,
-      { id: Date.now(), role: "user", content: text, created_at: new Date().toISOString() },
+      {
+        id: Date.now(),
+        role: "user",
+        content: text,
+        created_at: new Date().toISOString(),
+      },
     ]);
     setInputValue("");
     streamingRef.current = { events: [], reasoning: "" };
     pendingApprovalsRef.current = [];
     setApprovalRequests([]);
-    // 不清空 usageInfo：保留累计统计，等待新一轮 SSE 覆盖
     hasReceivedLiveUsage.current = false;
     await send(convId, text);
   }, [inputValue, isStreaming, convId, send]);
 
   if (isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+      <div className="flex flex-1 items-center justify-center bg-panel-elevated">
+        <div className="flex items-center gap-3 rounded-[18px] border border-border/80 bg-panel px-5 py-4 shadow-sm">
+          <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/50 border-t-transparent" />
+          <span className="text-sm text-muted-foreground">正在加载对话...</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden min-h-0">
-      {/* 主内容区 */}
-      <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-        {/* 工具栏 */}
-        <div className="flex items-center justify-end gap-1 border-b px-3 py-1.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            title="对话统计"
-            onClick={() => setShowUsage(!showUsage)}
-          >
-            <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            title="项目权限设置"
-            onClick={() => navigate(`/projects/${pid}/settings`)}
-          >
-            <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
-        </div>
-
-        {/* 消息列表 */}
-        <div
-          ref={containerRef}
-          onScroll={handleScroll}
-          className="flex-1 overflow-y-auto min-h-0 px-4 py-4"
-        >
-          <div className="mx-auto max-w-3xl space-y-4">
-            {localMessages.filter(m => m.role !== "tool").map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
-            {isStreaming && (streamingRef.current.events.length > 0 || streamingRef.current.reasoning) && (
-              <div className="flex gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
-                  🤖
-                </div>
-                <div className="min-w-0 flex-1 space-y-2">
-                  {streamingRef.current.reasoning && (
-                    <CollapsibleBlock title="思考过程" variant="reasoning">
-                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                        {streamingRef.current.reasoning}
-                      </p>
-                    </CollapsibleBlock>
-                  )}
-                  {/* 按时间顺序渲染事件 */}
-                  <StreamingEventsList events={streamingRef.current.events} />
-                  {/* 无事件也无reasoning时显示思考中 */}
-                  {streamingRef.current.events.length === 0 && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      <span>⏳ AI 正在思考...</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel-elevated">
+        <div className="border-b border-border/70 bg-panel/75 px-4 py-3 backdrop-blur-sm">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 rounded-[16px] border border-border/70 bg-panel-elevated px-4 py-3 shadow-sm">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">
+                Active conversation
+              </p>
+              <h3 className="mt-1 truncate text-sm font-semibold text-foreground">
+                {conversation?.title || "新对话"}
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={showUsage ? "secondary" : "ghost"}
+                size="icon"
+                className="h-9 w-9 rounded-[12px]"
+                title="对话统计"
+                onClick={() => setShowUsage(!showUsage)}
+              >
+                <BarChart3 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-[12px]"
+                title="项目权限设置"
+                onClick={() => navigate(`/projects/${pid}/settings`)}
+              >
+                <Shield className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* 输入区 */}
-        <div className="border-t p-4">
-          <div className="mx-auto max-w-3xl">
-            <div className="flex gap-2">
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
+        >
+          <div className="mx-auto max-w-5xl space-y-5">
+            {localMessages.filter((m) => m.role !== "tool").length === 0 && !isStreaming ? (
+              <ChatEmptyState />
+            ) : (
+              localMessages
+                .filter((m) => m.role !== "tool")
+                .map((msg) => <MessageBubble key={msg.id} message={msg} />)
+            )}
+
+            {isStreaming &&
+              (streamingRef.current.events.length > 0 ||
+                streamingRef.current.reasoning) && (
+                <div className="flex gap-4">
+                  <AssistantAvatar />
+                  <div className="min-w-0 flex-1 space-y-3">
+                    {streamingRef.current.reasoning && (
+                      <CollapsibleBlock title="思考过程" variant="reasoning">
+                        <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                          {streamingRef.current.reasoning}
+                        </p>
+                      </CollapsibleBlock>
+                    )}
+                    <StreamingEventsList events={streamingRef.current.events} />
+                    {streamingRef.current.events.length === 0 && (
+                      <div className="rounded-[16px] border border-border/70 bg-panel px-4 py-3 text-sm text-muted-foreground shadow-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          <span>AI 正在思考...</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+          </div>
+        </div>
+
+        <div className="border-t border-border/70 bg-panel/82 px-5 py-4 backdrop-blur-sm">
+          <div className="mx-auto max-w-5xl rounded-[20px] border border-border/80 bg-panel-elevated p-3 shadow-sm">
+            <div className="flex gap-3">
               <textarea
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
@@ -464,16 +527,20 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
                   }
                 }}
                 placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-                className="min-h-[40px] max-h-[160px] flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="min-h-[52px] max-h-[180px] flex-1 resize-none rounded-[14px] border border-input/90 bg-panel px-4 py-3 text-sm leading-6 shadow-sm placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/80"
                 rows={1}
               />
               {isStreaming ? (
-                <Button variant="destructive" className="shrink-0" onClick={abort}>
+                <Button
+                  variant="destructive"
+                  className="h-auto shrink-0 self-stretch px-5"
+                  onClick={abort}
+                >
                   停止
                 </Button>
               ) : (
                 <Button
-                  className="shrink-0"
+                  className="h-auto shrink-0 self-stretch px-5"
                   onClick={handleSend}
                   disabled={!inputValue.trim()}
                 >
@@ -481,19 +548,15 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
                 </Button>
               )}
             </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              当前工作台支持流式回答、工具审批与用量统计，建议围绕单一任务保持对话连续性。
+            </p>
           </div>
         </div>
       </div>
 
-      {/* 右侧用量面板 */}
-      {showUsage && (
-        <UsagePanel
-          usage={usageInfo}
-          onClose={() => setShowUsage(false)}
-        />
-      )}
+      {showUsage && <UsagePanel usage={usageInfo} onClose={() => setShowUsage(false)} />}
 
-      {/* 审批弹窗 */}
       <ToolApprovalDialog
         open={showApproval && approvalRequests.length > 0}
         requests={approvalRequests}
@@ -504,11 +567,9 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
   );
 }
 
-// ── 按时间顺序渲染流式事件 ──
 function StreamingEventsList({ events }: { events: StreamingEvent[] }) {
   if (!events.length) return null;
 
-  // 将连续的 text 事件合并为一个 MarkdownContent 块
   const merged: Array<{ key: string; node: React.ReactNode }> = [];
   let textBuffer = "";
 
@@ -517,7 +578,7 @@ function StreamingEventsList({ events }: { events: StreamingEvent[] }) {
       merged.push({
         key: `text-${merged.length}`,
         node: (
-          <div className="inline-block max-w-full rounded-lg bg-muted px-3 py-2 text-sm">
+          <div className="rounded-[18px] border border-border/70 bg-panel-elevated px-4 py-3 text-sm text-foreground shadow-sm">
             <MarkdownContent content={textBuffer} />
           </div>
         ),
@@ -535,8 +596,8 @@ function StreamingEventsList({ events }: { events: StreamingEvent[] }) {
         merged.push({
           key: `tc-${ev.tool_call_id}`,
           node: (
-            <CollapsibleBlock title={`🔧 ${ev.tool_name}`} variant="tool">
-              <pre className="overflow-x-auto text-xs text-muted-foreground">
+            <CollapsibleBlock title={`工具调用 · ${ev.tool_name}`} variant="tool">
+              <pre className="overflow-x-auto rounded-[12px] bg-panel px-3 py-3 text-xs leading-6 text-muted-foreground">
                 {ev.arguments}
               </pre>
             </CollapsibleBlock>
@@ -546,8 +607,8 @@ function StreamingEventsList({ events }: { events: StreamingEvent[] }) {
         merged.push({
           key: `tr-${ev.tool_call_id}`,
           node: (
-            <CollapsibleBlock title={`✅ ${ev.tool_name} 结果`} variant="tool">
-              <pre className="overflow-x-auto text-xs text-muted-foreground">
+            <CollapsibleBlock title={`工具结果 · ${ev.tool_name}`} variant="tool">
+              <pre className="overflow-x-auto rounded-[12px] bg-panel px-3 py-3 text-xs leading-6 text-muted-foreground">
                 {ev.content}
               </pre>
             </CollapsibleBlock>
@@ -558,7 +619,7 @@ function StreamingEventsList({ events }: { events: StreamingEvent[] }) {
           key: `reason-${merged.length}`,
           node: (
             <CollapsibleBlock title="思考过程" variant="reasoning">
-              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
                 {ev.content}
               </p>
             </CollapsibleBlock>
@@ -569,39 +630,26 @@ function StreamingEventsList({ events }: { events: StreamingEvent[] }) {
   }
   flushText();
 
-  return (
-    <div className="space-y-2">
-      {merged.map((item) => (
-        <div key={item.key}>{item.node}</div>
-      ))}
-    </div>
-  );
+  return <div className="space-y-3">{merged.map((item) => <div key={item.key}>{item.node}</div>)}</div>;
 }
 
-// ── 消息气泡 ──
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
 
   return (
-    <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
-      <div
-        className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs",
-          isUser ? "bg-primary/10 text-primary" : "bg-muted",
-        )}
-      >
-        {isUser ? "👤" : "🤖"}
-      </div>
-      <div className={cn("min-w-0 max-w-[80%] space-y-2", isUser && "text-right")}>
-        {/* 有 events 时按时间顺序渲染；否则走旧路径 */}
+    <div className={cn("flex gap-4", isUser && "flex-row-reverse")}>
+      {isUser ? <UserAvatar /> : <AssistantAvatar />}
+      <div className={cn("min-w-0 max-w-[82%] space-y-3", isUser && "text-right")}>
         {message.events && message.events.length > 0 ? (
           <StreamingEventsList events={message.events} />
         ) : (
           <>
             <div
               className={cn(
-                "inline-block max-w-full rounded-lg px-3 py-2 text-sm",
-                isUser ? "bg-primary text-primary-foreground" : "bg-muted",
+                "inline-block max-w-full rounded-[18px] border px-4 py-3 text-sm leading-6 shadow-sm",
+                isUser
+                  ? "border-primary/20 bg-primary text-primary-foreground"
+                  : "border-border/70 bg-panel-elevated text-foreground",
               )}
             >
               {isUser ? (
@@ -613,10 +661,10 @@ function MessageBubble({ message }: { message: Message }) {
             {message.tool_calls?.map((tc) => (
               <CollapsibleBlock
                 key={tc.id}
-                title={`🔧 ${tc.function.name}`}
+                title={`工具调用 · ${tc.function.name}`}
                 variant="tool"
               >
-                <pre className="overflow-x-auto text-xs text-muted-foreground">
+                <pre className="overflow-x-auto rounded-[12px] bg-panel px-3 py-3 text-xs leading-6 text-muted-foreground">
                   {tc.function.arguments}
                 </pre>
               </CollapsibleBlock>
@@ -628,7 +676,6 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-// ── 折叠块 ──
 function CollapsibleBlock({
   title,
   variant,
@@ -639,19 +686,54 @@ function CollapsibleBlock({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const borderColor = variant === "reasoning" ? "border-l-warning" : "border-l-primary";
+  const styles =
+    variant === "reasoning"
+      ? "border-warning/30 bg-warning/5"
+      : "border-primary/18 bg-primary/5";
 
   return (
-    <div className={cn("rounded-md border-l-2 bg-muted/50", borderColor)}>
+    <div className={cn("rounded-[16px] border shadow-sm", styles)}>
       <button
-        className="flex w-full items-center gap-1 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
         onClick={() => setOpen(!open)}
       >
         <span className={cn("transition-transform", open && "rotate-90")}>▶</span>
         {title}
       </button>
-      {open && <div className="px-3 pb-2">{children}</div>}
+      {open && <div className="px-4 pb-4">{children}</div>}
     </div>
   );
 }
 
+function ChatEmptyState() {
+  return (
+    <div className="rounded-[24px] border border-dashed border-border/80 bg-panel px-8 py-10 text-center shadow-sm">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[18px] bg-primary-soft text-primary">
+        <MessageSquare className="h-6 w-6" />
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground/75">
+        AI Collaboration
+      </p>
+      <h3 className="mt-3 text-xl font-semibold text-foreground">开始一个新的开发对话</h3>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        在这里描述你的需求、贴出错误信息，或让 AI 协助你浏览文件、执行工具和推进任务。
+      </p>
+    </div>
+  );
+}
+
+function AssistantAvatar() {
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-border/70 bg-panel text-sm shadow-sm">
+      🤖
+    </div>
+  );
+}
+
+function UserAvatar() {
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-primary/18 bg-primary-soft text-sm text-primary shadow-sm">
+      👤
+    </div>
+  );
+}
