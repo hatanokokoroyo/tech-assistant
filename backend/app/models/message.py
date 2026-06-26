@@ -12,6 +12,7 @@ class Message(Base):
     role = Column(String(20), nullable=False)
     content = Column(Text)
     tool_calls = Column(JSONB)
+    events = Column(JSONB)  # 按时间顺序排列的事件列表（用于前端按序渲染）
     tool_call_id = Column(String(100))
     tool_name = Column(String(100))
     prompt_tokens = Column(Integer, nullable=True)

@@ -74,6 +74,7 @@ async def get_messages(db: AsyncSession, conv_id: int) -> list[dict]:
             "role": m.role,
             "content": m.content,
             "tool_calls": m.tool_calls,
+            "events": m.events,
             "tool_call_id": m.tool_call_id,
             "tool_name": m.tool_name,
             "prompt_tokens": m.prompt_tokens,
@@ -96,9 +97,11 @@ async def save_user_message(db: AsyncSession, conv_id: int, content: str) -> Mes
 
 async def save_assistant_message(db: AsyncSession, conv_id: int, content: str | None, tool_calls: list | None = None,
                                  prompt_tokens: int | None = None, completion_tokens: int | None = None,
-                                 total_tokens: int | None = None, cost: float | None = None) -> Message:
+                                 total_tokens: int | None = None, cost: float | None = None,
+                                 events: list | None = None) -> Message:
     msg = Message(
         conversation_id=conv_id, role="assistant", content=content, tool_calls=tool_calls,
+        events=events,
         prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
         total_tokens=total_tokens, cost=cost,
     )

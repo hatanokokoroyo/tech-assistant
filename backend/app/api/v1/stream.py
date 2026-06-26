@@ -83,6 +83,8 @@ async def stream_chat(
         assistant_content_parts: list[str] = []
         assistant_tool_calls: list[dict] = []
         tool_results: list[dict] = []
+        # 按时间顺序排列的事件列表（用于前端按序渲染）
+        ordered_events: list[dict] = []
         # 累积用量（跨多轮 agentic loop，仅当前流的累计）
         cumulative_usage: dict = {}
 
@@ -90,6 +92,11 @@ async def stream_chat(
             async for chunk in client.stream(user_content, history):
                 if chunk["type"] == "token":
                     assistant_content_parts.append(chunk["content"])
+                    # 合并连续的 text 事件到 ordered_events
+                    if ordered_events and ordered_events[-1]["type"] == "text":
+                        ordered_events[-1]["content"] += chunk["content"]
+                    else:
+                        ordered_events.append({"type": "text", "content": chunk["content"]})
                     yield _sse("token", {"type": "text", "content": chunk["content"]})
 
                 elif chunk["type"] == "reasoning":
@@ -105,6 +112,15 @@ async def stream_chat(
                             break
                     if not found:
                         assistant_tool_calls.append(tc)
+                    # 更新或追加 tool_call 事件到 ordered_events
+                    tc_event = {"type": "tool_call", "tool_call_id": tc["id"],
+                                "tool_name": tc["function"]["name"], "arguments": tc["function"]["arguments"]}
+                    ev_idx = next((i for i, e in enumerate(ordered_events)
+                                   if e["type"] == "tool_call" and e["tool_call_id"] == tc["id"]), -1)
+                    if ev_idx >= 0:
+                        ordered_events[ev_idx] = tc_event
+                    else:
+                        ordered_events.append(tc_event)
                     yield _sse("tool_call", {
                         "tool_call_id": tc["id"],
                         "tool_name": tc["function"]["name"],
@@ -116,6 +132,13 @@ async def stream_chat(
                         "tool_call_id": chunk["tool_call_id"],
                         "name": chunk["name"],
                         "content": chunk["content"],
+                    })
+                    ordered_events.append({
+                        "type": "tool_result",
+                        "tool_call_id": chunk["tool_call_id"],
+                        "tool_name": chunk["name"],
+                        "content": chunk["content"],
+                        "is_error": chunk.get("is_error", False),
                     })
                     yield _sse("tool_result", {
                         "tool_call_id": chunk["tool_call_id"],
@@ -171,6 +194,7 @@ async def stream_chat(
                     assistant_content_parts, assistant_tool_calls, tool_results,
                     cumulative_usage,
                     existing_cumulative=existing_cumulative,
+                    ordered_events=ordered_events,
                 )
             except Exception:
                 logger.exception("保存部分消息失败")
@@ -184,6 +208,7 @@ async def stream_chat(
                     assistant_content_parts, assistant_tool_calls, tool_results,
                     cumulative_usage,
                     existing_cumulative=existing_cumulative,
+                    ordered_events=ordered_events,
                 )
             except Exception:
                 logger.exception("保存部分消息失败")
@@ -200,6 +225,7 @@ async def stream_chat(
                 assistant_content_parts, assistant_tool_calls, tool_results,
                 cumulative_usage,
                 existing_cumulative=existing_cumulative,
+                ordered_events=ordered_events,
             )
         except Exception:
             logger.exception("持久化最终消息失败")
@@ -263,6 +289,7 @@ async def _persist_partial(
     tool_results: list[dict],
     usage: dict | None = None,
     existing_cumulative: dict | None = None,
+    ordered_events: list[dict] | None = None,
 ):
     """保存已收到的部分消息，保证消息链完整性。
 
@@ -284,6 +311,7 @@ async def _persist_partial(
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
             cost=cost,
+            events=ordered_events,
         )
         all_results = list(tool_results)
         saved_ids = {tr["tool_call_id"] for tr in all_results}
@@ -307,6 +335,7 @@ async def _persist_partial(
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
             cost=cost,
+            events=ordered_events,
         )
 
     # 更新对话累计统计（累加：历史 + 当前流）
