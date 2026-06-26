@@ -38,7 +38,7 @@ info()  { echo -e "${CYAN}▸${NC} $*"; }
 ok()    { echo -e "${GREEN}✔${NC} $*"; }
 warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
 err()   { echo -e "${RED}✘${NC} $*" >&2; }
-step()  { echo -e "\n${BOLD}[$1/5]${NC} ${CYAN}$2${NC}"; }
+step()  { echo -e "\n${BOLD}[$1/6]${NC} ${CYAN}$2${NC}"; }
 
 # ── 参数解析 ──────────────────────────────────────────
 NO_CACHE=""
@@ -181,6 +181,11 @@ do_build_and_up() {
     fi
     ok "服务已启动"
     timer_end
+
+    step "5" "数据库迁移"
+    info "执行 alembic upgrade head..."
+    $COMPOSE run --rm backend alembic upgrade head 2>&1 || warn "数据库迁移失败，请检查 Alembic 配置"
+    ok "数据库迁移完成"
 
     step "5" "服务状态"
     sleep 2

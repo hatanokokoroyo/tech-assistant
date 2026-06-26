@@ -117,6 +117,7 @@ CREATE TABLE messages (
     role                VARCHAR(20)     NOT NULL CHECK (role IN ('user', 'assistant', 'tool', 'system')),
     content             TEXT,
     tool_calls          JSONB,
+    events              JSONB,
     tool_call_id        VARCHAR(100),
     tool_name           VARCHAR(100),
     prompt_tokens       INTEGER,
@@ -135,6 +136,7 @@ COMMENT ON COLUMN messages.conversation_id  IS '所属对话';
 COMMENT ON COLUMN messages.role             IS '消息角色: user/assistant/tool/system';
 COMMENT ON COLUMN messages.content          IS '文本内容（tool消息可为空）';
 COMMENT ON COLUMN messages.tool_calls       IS 'assistant消息的工具调用数组';
+COMMENT ON COLUMN messages.events          IS '按时间顺序排列的事件列表（JSONB），用于前端按序渲染';
 COMMENT ON COLUMN messages.tool_call_id     IS 'tool消息对应的工具调用ID';
 COMMENT ON COLUMN messages.tool_name        IS 'tool消息的工具名称';
 COMMENT ON COLUMN messages.deleted_at       IS '逻辑删除时间';
