@@ -18,7 +18,7 @@ services:
       - .env
     environment:
       - DATASOURCE_ENCRYPTION_KEY=${DATASOURCE_ENCRYPTION_KEY}
-      - DB_QUERY_MCP_URL=http://dbquery-mcp:9100
+      - DB_QUERY_MCP_URL=http://dbquery-mcp:9100/mcp
     volumes:
       - tech_assistant_data:/data/tech-assistant
       - ./data/logs:/data/logs

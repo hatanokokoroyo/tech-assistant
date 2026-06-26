@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     datasource_encryption_key: str = ""
 
     # MCP Server 地址（Backend 连接用）
-    db_query_mcp_url: str = "http://127.0.0.1:9100"
+    db_query_mcp_url: str = "http://127.0.0.1:9100/mcp"
 
     @property
     def database_url(self) -> str:

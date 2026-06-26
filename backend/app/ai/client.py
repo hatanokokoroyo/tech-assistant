@@ -315,9 +315,27 @@ class AiClient:
         # 数据源查询章节
         if mcp_tool_names:
             datasource_section = (
+                "### 数据源查询（重要行为准则）\n\n"
                 "当前已启用数据库查询功能。可用工具：\n"
                 + "\n".join(f"- `{name}`" for name in mcp_tool_names)
-                + "\n\n查询前请先用 list_datasources 了解有哪些数据源可用。"
+                + "\n\n"
+                "**查询流程（必须遵守）：**\n"
+                "1. **先调用 `list_datasources`** — 确认当前项目下有哪些数据源可用\n"
+                "2. **根据上下文判断查询内容** — 结合用户的问题和已知的业务场景，"
+                "确定应该查询哪个数据源、执行什么查询\n"
+                "3. **不确定时必须提问** — 如果无法从上下文判断该查询什么表、什么字段，"
+                "请先向用户确认，不要盲目猜测\n\n"
+                "**禁止行为：**\n"
+                "- ❌ 不要尝试从代码仓库的配置文件（如 `application.yml`）中查找数据库信息来代替直接查询\n"
+                "- ❌ 不要猜测表名或字段名，如果不确定请先用 `list_datasources` 了解数据源，再向用户确认\n"
+                "- ❌ 不要在没有调用 `list_datasources` 的情况下直接执行数据查询\n\n"
+                "**正确示例：**\n"
+                "用户：「帮我查一下最近的告警数据」\n"
+                "→ 先调用 `list_datasources` → 发现有 `tdengine告警库` → 调用 `query_tdengine` 查询\n\n"
+                "**错误示例：**\n"
+                "用户：「帮我查一下最近的告警数据」\n"
+                "→ ❌ 直接搜索代码仓库中的配置文件找数据库连接信息\n"
+                "→ ❌ 猜测表名为 `alarm_history` 并直接查询"
             )
         else:
             datasource_section = (
