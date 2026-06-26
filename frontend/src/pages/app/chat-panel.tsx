@@ -302,7 +302,10 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
       console.error("SSE error:", err);
     }, []),
     onToolApprovalRequired: useCallback((req: ApprovalRequestEvent) => {
-      // 新一轮审批：重置防重复提交标记
+      // 如果上一批审批已提交（submittedRef=true），说明是新一轮审批，清空旧的
+      if (submittedRef.current) {
+        pendingApprovalsRef.current = [];
+      }
       submittedRef.current = false;
       pendingApprovalsRef.current = [
         ...pendingApprovalsRef.current,
