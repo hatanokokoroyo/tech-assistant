@@ -19,7 +19,7 @@ import {
 } from "@/queries/use-conversations";
 import { useSSE, type StreamEventType, type ApprovalRequestEvent, type ToolCallEvent, type ToolResultEvent, type ToolDeniedEvent } from "@/hooks/use-sse";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
-import type { Message, UsageInfo } from "@/api/conversations";
+import type { Message, StreamingEvent, UsageInfo } from "@/api/conversations";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/format";
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -173,14 +173,11 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
   const { data: conversation, isLoading } = useConversation(convId);
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
-  // 流式状态
+  // 流式状态 — 用统一的 events 列表保持时间顺序
   const streamingRef = useRef({
-    text: "",
+    events: [] as StreamingEvent[],
     reasoning: "",
-    toolCalls: [] as Array<{ tool_call_id: string; tool_name: string; arguments: string }>,
-    toolResults: [] as Array<{ tool_call_id: string; tool_name: string; content: string; is_error?: boolean }>,
   });
-  const [activeToolCalls, setActiveToolCalls] = useState<Array<{ tool_call_id: string; tool_name: string; arguments: string }>>([]);
   const [, forceRender] = useState(0);
 
   // 审批状态
@@ -199,8 +196,7 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
     setUsageInfo(null);
     setLocalMessages([]);
     setInputValue("");
-    streamingRef.current = { text: "", reasoning: "", toolCalls: [], toolResults: [] };
-    setActiveToolCalls([]);
+    streamingRef.current = { events: [], reasoning: "" };
     hasReceivedLiveUsage.current = false;
   }, [convId]);
 
@@ -239,59 +235,65 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
 
   const { containerRef, handleScroll } = useAutoScroll([
     localMessages,
-    streamingRef.current.text,
+    streamingRef.current.events,
   ]);
 
   const { send, abort, isStreaming } = useSSE({
     onToken: useCallback((type: StreamEventType, content: string) => {
-      if (type === "text") streamingRef.current.text += content;
-      else if (type === "reasoning") streamingRef.current.reasoning += content;
+      if (type === "text") {
+        streamingRef.current.events.push({ type: "text", content });
+      } else if (type === "reasoning") {
+        streamingRef.current.reasoning += content;
+      }
       forceRender((n) => n + 1);
     }, []),
     onToolCall: useCallback((event: ToolCallEvent) => {
       // tool_call 来自流式 delta，同一 tool_call_id 可能收到多次增量更新
-      const idx = streamingRef.current.toolCalls.findIndex(
-        (tc) => tc.tool_call_id === event.tool_call_id,
+      // 合并到最后一个同 id 的 tool_call 事件，或追加新事件
+      const evts = streamingRef.current.events;
+      const idx = evts.findIndex(
+        (e) => e.type === "tool_call" && e.tool_call_id === event.tool_call_id,
       );
       if (idx >= 0) {
-        streamingRef.current.toolCalls[idx] = event;
+        evts[idx] = { type: "tool_call", ...event };
       } else {
-        streamingRef.current.toolCalls.push(event);
+        evts.push({ type: "tool_call", ...event });
       }
-      setActiveToolCalls([...streamingRef.current.toolCalls]);
+      // 同步 activeToolCalls（用于实时显示旋转指示器）
       forceRender((n) => n + 1);
     }, []),
     onToolResult: useCallback((event: ToolResultEvent) => {
-      streamingRef.current.toolResults.push(event);
-      // 从活跃列表中移除
-      setActiveToolCalls((prev) =>
-        prev.filter((tc) => tc.tool_call_id !== event.tool_call_id),
-      );
+      streamingRef.current.events.push({ type: "tool_result", ...event });
       forceRender((n) => n + 1);
     }, []),
     onMessageEnd: useCallback((aborted?: boolean) => {
       const sc = streamingRef.current;
-      if (sc.text || sc.toolCalls.length > 0 || aborted) {
-        // 构造 tool_calls 列表（用于已保存 assistant 消息的展示）
-        const toolCallsForMsg = sc.toolCalls.map((tc) => ({
-          id: tc.tool_call_id,
-          type: "function",
-          function: {
-            name: tc.tool_name,
-            arguments: tc.arguments || "",
-          },
-        }));
+      const hasEvents = sc.events.length > 0 || aborted;
+      if (hasEvents) {
+        // 从事件列表中提取 content 和 tool_calls（兼容后端 Message 结构）
+        const textParts: string[] = [];
+        const toolCallsForMsg: Message["tool_calls"] = [];
+        for (const ev of sc.events) {
+          if (ev.type === "text") textParts.push(ev.content);
+          else if (ev.type === "tool_call") {
+            toolCallsForMsg!.push({
+              id: ev.tool_call_id,
+              type: "function",
+              function: { name: ev.tool_name, arguments: ev.arguments || "" },
+            });
+          }
+        }
         const newMsg: Message = {
           id: Date.now(),
           role: "assistant",
-          content: sc.text || null,
-          tool_calls: toolCallsForMsg.length > 0 ? toolCallsForMsg : null,
+          content: textParts.length > 0 ? textParts.join("") : null,
+          tool_calls: toolCallsForMsg!.length > 0 ? toolCallsForMsg : null,
+          events: [...sc.events],
           created_at: new Date().toISOString(),
         };
         setLocalMessages((prev) => [...prev, newMsg]);
       }
-      streamingRef.current = { text: "", reasoning: "", toolCalls: [], toolResults: [] };
-      setActiveToolCalls([]);
+      streamingRef.current = { events: [], reasoning: "" };
       // 清理审批状态
       pendingApprovalsRef.current = [];
       setApprovalRequests([]);
@@ -368,8 +370,7 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
       { id: Date.now(), role: "user", content: text, created_at: new Date().toISOString() },
     ]);
     setInputValue("");
-    streamingRef.current = { text: "", reasoning: "", toolCalls: [], toolResults: [] };
-    setActiveToolCalls([]);
+    streamingRef.current = { events: [], reasoning: "" };
     pendingApprovalsRef.current = [];
     setApprovalRequests([]);
     // 不清空 usageInfo：保留累计统计，等待新一轮 SSE 覆盖
@@ -421,7 +422,7 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
             {localMessages.filter(m => m.role !== "tool").map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
-            {isStreaming && (streamingRef.current.text || streamingRef.current.reasoning || activeToolCalls.length > 0) && (
+            {isStreaming && (streamingRef.current.events.length > 0 || streamingRef.current.reasoning) && (
               <div className="flex gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
                   🤖
@@ -434,29 +435,10 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
                       </p>
                     </CollapsibleBlock>
                   )}
-                  {/* 文本内容（如有） */}
-                  {streamingRef.current.text && (
-                    <>
-                      <MarkdownContent content={streamingRef.current.text} />
-                      <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground" />
-                    </>
-                  )}
-                  {/* 工具调用指示（与文本并列展示） */}
-                  {activeToolCalls.length > 0 && (
-                    <div className="space-y-1.5 border-t pt-2">
-                      {activeToolCalls.map((tc) => (
-                        <div
-                          key={tc.tool_call_id}
-                          className="flex items-center gap-2 text-sm text-muted-foreground"
-                        >
-                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                          <span>🔧 正在运行 <code className="rounded bg-muted-foreground/10 px-1 font-mono text-xs">{tc.tool_name}</code></span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {/* 无文本也无工具时显示思考中 */}
-                  {!streamingRef.current.text && activeToolCalls.length === 0 && (
+                  {/* 按时间顺序渲染事件 */}
+                  <StreamingEventsList events={streamingRef.current.events} />
+                  {/* 无事件也无reasoning时显示思考中 */}
+                  {streamingRef.current.events.length === 0 && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
                       <span>⏳ AI 正在思考...</span>
@@ -522,6 +504,80 @@ export function ChatViewContent({ convId, pid }: { convId: number; pid: number }
   );
 }
 
+// ── 按时间顺序渲染流式事件 ──
+function StreamingEventsList({ events }: { events: StreamingEvent[] }) {
+  if (!events.length) return null;
+
+  // 将连续的 text 事件合并为一个 MarkdownContent 块
+  const merged: Array<{ key: string; node: React.ReactNode }> = [];
+  let textBuffer = "";
+
+  const flushText = () => {
+    if (textBuffer) {
+      merged.push({
+        key: `text-${merged.length}`,
+        node: (
+          <div className="inline-block max-w-full rounded-lg bg-muted px-3 py-2 text-sm">
+            <MarkdownContent content={textBuffer} />
+          </div>
+        ),
+      });
+      textBuffer = "";
+    }
+  };
+
+  for (const ev of events) {
+    if (ev.type === "text") {
+      textBuffer += ev.content;
+    } else {
+      flushText();
+      if (ev.type === "tool_call") {
+        merged.push({
+          key: `tc-${ev.tool_call_id}`,
+          node: (
+            <CollapsibleBlock title={`🔧 ${ev.tool_name}`} variant="tool">
+              <pre className="overflow-x-auto text-xs text-muted-foreground">
+                {ev.arguments}
+              </pre>
+            </CollapsibleBlock>
+          ),
+        });
+      } else if (ev.type === "tool_result") {
+        merged.push({
+          key: `tr-${ev.tool_call_id}`,
+          node: (
+            <CollapsibleBlock title={`✅ ${ev.tool_name} 结果`} variant="tool">
+              <pre className="overflow-x-auto text-xs text-muted-foreground">
+                {ev.content}
+              </pre>
+            </CollapsibleBlock>
+          ),
+        });
+      } else if (ev.type === "reasoning") {
+        merged.push({
+          key: `reason-${merged.length}`,
+          node: (
+            <CollapsibleBlock title="思考过程" variant="reasoning">
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {ev.content}
+              </p>
+            </CollapsibleBlock>
+          ),
+        });
+      }
+    }
+  }
+  flushText();
+
+  return (
+    <div className="space-y-2">
+      {merged.map((item) => (
+        <div key={item.key}>{item.node}</div>
+      ))}
+    </div>
+  );
+}
+
 // ── 消息气泡 ──
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
@@ -537,29 +593,36 @@ function MessageBubble({ message }: { message: Message }) {
         {isUser ? "👤" : "🤖"}
       </div>
       <div className={cn("min-w-0 max-w-[80%] space-y-2", isUser && "text-right")}>
-        <div
-          className={cn(
-            "inline-block max-w-full rounded-lg px-3 py-2 text-sm",
-            isUser ? "bg-primary text-primary-foreground" : "bg-muted",
-          )}
-        >
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
-          ) : (
-            <MarkdownContent content={message.content || ""} />
-          )}
-        </div>
-        {message.tool_calls?.map((tc) => (
-          <CollapsibleBlock
-            key={tc.id}
-            title={`🔧 ${tc.function.name}`}
-            variant="tool"
-          >
-            <pre className="overflow-x-auto text-xs text-muted-foreground">
-              {tc.function.arguments}
-            </pre>
-          </CollapsibleBlock>
-        ))}
+        {/* 有 events 时按时间顺序渲染；否则走旧路径 */}
+        {message.events && message.events.length > 0 ? (
+          <StreamingEventsList events={message.events} />
+        ) : (
+          <>
+            <div
+              className={cn(
+                "inline-block max-w-full rounded-lg px-3 py-2 text-sm",
+                isUser ? "bg-primary text-primary-foreground" : "bg-muted",
+              )}
+            >
+              {isUser ? (
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              ) : (
+                <MarkdownContent content={message.content || ""} />
+              )}
+            </div>
+            {message.tool_calls?.map((tc) => (
+              <CollapsibleBlock
+                key={tc.id}
+                title={`🔧 ${tc.function.name}`}
+                variant="tool"
+              >
+                <pre className="overflow-x-auto text-xs text-muted-foreground">
+                  {tc.function.arguments}
+                </pre>
+              </CollapsibleBlock>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

@@ -19,6 +19,8 @@ export interface Message {
   role: "user" | "assistant" | "tool";
   content: string | null;
   tool_calls?: ToolCallInfo[] | null;
+  /** 按时间顺序排列的流式事件，用于按序渲染 */
+  events?: StreamingEvent[] | null;
   tool_call_id?: string | null;
   tool_name?: string | null;
   prompt_tokens?: number | null;
@@ -36,6 +38,13 @@ export interface ToolCallInfo {
     arguments: string;
   };
 }
+
+/** 流式事件 — 按时间顺序排列，用于前端按序渲染 */
+export type StreamingEvent =
+  | { type: "text"; content: string }
+  | { type: "reasoning"; content: string }
+  | { type: "tool_call"; tool_call_id: string; tool_name: string; arguments: string }
+  | { type: "tool_result"; tool_call_id: string; tool_name: string; content: string; is_error?: boolean };
 
 export interface ConversationDetail extends Conversation {
   messages: Message[];
