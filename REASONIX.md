@@ -38,6 +38,23 @@ docker compose down -v                 # 停止并清除数据卷
 - **Git 提交：** Conventional Commits 格式，描述使用中文. 没有明确指令, 禁止自发提交代码.
 - **代码检索：** 优先使用 CodeGraph MCP 工具（`codegraph_explore` / `codegraph_search` / `codegraph_node` / `codegraph_callers`）进行代码搜索和分析，而非使用 `grep` 工具。CodeGraph 基于完整知识图谱，能提供符号定义、调用链、依赖关系等语义信息，比纯文本 grep 更准确高效。
 
+## 数据库迁移（Alembic）
+- 项目使用 Alembic 管理 PostgreSQL schema 迁移
+- ORM 模型位于 `backend/app/models/`，迁移脚本位于 `backend/alembic/versions/`
+- `deploy.sh` 第 5 步自动执行 `alembic upgrade head`
+
+**⚠️ 提交规则：修改 ORM 模型后必须执行迁移**
+如果 `git diff` 中包含 `backend/app/models/` 下的文件改动（新增/修改/删除字段、表），提交前必须：
+```bash
+# 1. 生成迁移脚本（对比当前模型与 DB schema）
+docker compose run --rm backend alembic revision --autogenerate -m '<改动描述>'
+
+# 2. 检查生成的迁移文件内容是否正确
+# 3. 应用迁移
+docker compose run --rm backend alembic upgrade head
+```
+**禁止跳过此步骤直接提交模型改动**，否则其他服务器部署时数据库 schema 不同步会导致运行异常。
+
 ## 注意事项
 - 需要 Docker Desktop（bind mount 宿主机路径）
 - DeepSeek API Key 需在 `.env` 中配置
