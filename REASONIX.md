@@ -18,11 +18,19 @@
 
 ## 常用命令
 ```
+./deploy.sh                     # **首选操作**一键部署：构建镜像 → 启动服务 → 数据库迁移
+./deploy.sh --no-cache          # 完全重建（清除构建缓存）
+./deploy.sh --pull              # 拉取最新基础镜像后构建
+./deploy.sh --logs              # 构建并启动后自动跟踪日志
+./deploy.sh --restart           # 重启所有服务（不重新构建）
+./deploy.sh --status            # 查看服务状态
+./deploy.sh --down              # 停止所有服务
+./deploy.sh --clean             # 停止服务并清除所有数据卷
+./deploy.sh --backend           # 仅重新构建并重启后端(重启后端会导致ip变化前端容器无法访问, 重启后端时也需要重启前端)
+./deploy.sh --frontend          # 仅重新构建并重启前端
 npm --prefix frontend run dev          # Vite 开发服务器（端口 3000，/api 代理到 backend:8000）
 npm --prefix frontend run build        # tsc 类型检查 + vite 构建 → dist/
 uvicorn app.main:app --host 0.0.0.0 --port 8000   # 后端（Docker 内或 venv 中）
-docker compose up -d --build           # 构建并启动全部服务
-docker compose down -v                 # 停止并清除数据卷
 ```
 
 ## 设计原则
@@ -61,3 +69,46 @@ docker compose run --rm backend alembic upgrade head
 - SSE 依赖 Nginx `proxy_buffering off`
 - 尚无测试、无 lint/格式化工具
 - 每次开发完成后需对改动进行 code review
+
+## 远程浏览器调试（Chrome DevTools MCP）
+项目已安装 `chrome-devtools-mcp`（配置见 `.mcp.json`），可远程操控外部 Chrome 浏览器，用于前端 bug 排查、截图、控制台检查、性能分析等。
+
+### 工作原理
+Mac Mini（本机）运行 MCP 服务器，通过 SSH 反向隧道连接到远程机器上的 Chrome 调试端口（9222），实现对远程浏览器的完整控制。
+
+### 启动前准备（远程机器端）
+
+**1. 启动 Chrome 带调试端口**
+
+Windows:
+```powershell
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\temp\chrome-debug-profile"
+```
+
+> ⚠️ 必须先关闭所有已运行的 Chrome/Edge 实例，否则 `--remote-debugging-port` 会被忽略。`--user-data-dir` 为必填项（Chrome 安全要求）。
+
+验证：在 Chrome 中访问 `http://127.0.0.1:9222/json/version`，应返回 JSON。
+
+**2. 建立 SSH 反向隧道**
+
+在远程机器上执行（保持窗口不关闭）：
+```bash
+# 局域网场景
+ssh -N -R 9222:127.0.0.1:9222 <mac_user>@<mac_mini_ip>
+
+# 公网场景（远程电脑通过公网 SSH 到 Mac Mini）
+ssh -N -R 9222:127.0.0.1:9222 <mac_user>@<mac_mini_public_ip>
+```
+
+隧道建立后，Mac Mini 的 `127.0.0.1:9222` 会转发到远程 Chrome 的调试端口。
+
+### 使用流程
+1. 远程机器启动带调试端口的 Chrome
+2. 远程机器建立 SSH 反向隧道
+3. Mac Mini 重启 IDE/MCP 服务使 `.mcp.json` 生效
+4. 使用 MCP 工具操作远程浏览器（截图、查看控制台、网络请求等）
+
+### 注意
+- SSH 隧道和 Chrome 调试窗口都需保持打开
+- Edge 不支持 `--remote-debugging-address=0.0.0.0`，跨网络直连不可行，必须使用 SSH 隧道
+- `.mcp.json` 配置为 `http://127.0.0.1:9222`（本地端口，由 SSH 隧道转发）

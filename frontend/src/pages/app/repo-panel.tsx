@@ -317,7 +317,7 @@ function RepoCard({
   };
 
   return (
-    <div className="rounded-[18px] border border-border/80 bg-panel-elevated p-4 shadow-sm transition-shadow hover:shadow-md">
+    <div className="max-w-full rounded-[18px] border border-border/80 bg-panel-elevated p-4 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
@@ -349,9 +349,9 @@ function RepoCard({
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
               Active branch
             </p>
-            <p className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
-              <GitBranch className="h-4 w-4 text-muted-foreground" />
-              {currentBranch}
+            <p className="mt-1 flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+              <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{currentBranch}</span>
             </p>
           </div>
 
