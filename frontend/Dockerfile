@@ -1,7 +1,12 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json ./
-RUN npm config set registry https://registry.npmmirror.com && npm install
+
+# 1) 先复制 lockfile + package.json → 安装依赖（利用 Docker 层缓存）
+COPY package.json package-lock.json ./
+# RUN npm config set registry https://registry.npmmirror.com && npm ci --prefer-offline
+RUN npm ci --prefer-offline
+
+# 2) 再复制源码并构建
 COPY . .
 RUN npm run build
 

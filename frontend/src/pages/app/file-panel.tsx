@@ -13,6 +13,7 @@ import type { FileTreeNode } from "@/api/files";
 import { useFileEditor } from "./file-editor-hook";
 import { cn } from "@/lib/utils";
 import { useState, useCallback } from "react";
+import MarkdownEditor from "@/components/markdown-editor";
 
 export function FilePanelHeader({ pid }: { pid: number }) {
   return (
@@ -197,6 +198,8 @@ export function FileEditorContent({
   const { content, dirty, setDirty, setContent, handleSave, saving, isLoading } =
     useFileEditor(pid, filePath);
 
+  const isMarkdown = /\.(md|markdown)$/i.test(filePath);
+
   if (!filePath) {
     return (
       <div className="flex flex-1 items-center justify-center px-8 text-muted-foreground">
@@ -228,7 +231,7 @@ export function FileEditorContent({
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-panel-elevated">
+    <div className="flex flex-1 flex-col overflow-hidden bg-panel-elevated">
       <div className="border-b border-border/70 bg-panel/75 px-4 py-3 backdrop-blur-sm">
         <div className="flex items-center justify-between gap-4 rounded-[16px] border border-border/70 bg-panel-elevated px-4 py-3 shadow-sm">
           <div className="min-w-0">
@@ -262,15 +265,26 @@ export function FileEditorContent({
             <span className="font-mono">⌘/Ctrl + S 保存</span>
           </div>
           <div className="flex-1 overflow-auto bg-panel-elevated">
-            <textarea
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value);
-                setDirty(true);
-              }}
-              className="h-full w-full resize-none border-0 bg-transparent p-5 font-mono text-sm leading-7 text-foreground focus:outline-none"
-              spellCheck={false}
-            />
+            {isMarkdown ? (
+              <MarkdownEditor
+                value={content}
+                onChange={(val) => {
+                  setContent(val);
+                  setDirty(true);
+                }}
+                className="h-full"
+              />
+            ) : (
+              <textarea
+                value={content}
+                onChange={(e) => {
+                  setContent(e.target.value);
+                  setDirty(true);
+                }}
+                className="h-full w-full resize-none border-0 bg-transparent p-5 font-mono text-sm leading-7 text-foreground focus:outline-none"
+                spellCheck={false}
+              />
+            )}
           </div>
         </div>
       </div>
